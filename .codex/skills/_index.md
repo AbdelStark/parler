@@ -35,7 +35,9 @@ Lower-priority recommended skills not scaffolded yet:
 
 ## Known Baseline Risks
 
-- `parler/` is still missing; any install/test command that imports `parler.*` is blocked until Phase 1 work starts.
+- Phase 1 exists, but later domains are still missing: audio ingestion, transcription, attribution, extraction, exports, retry, and cache logic.
 - E2E fixture assets listed in `tests/fixtures/README.md` are not committed yet.
-- Tests and docs still drift on module names: `assembly` vs `assembler`, `attribution` vs `transcription.attributor`, `util` vs `utils`, `ParlerConfig` vs `PipelineConfig`.
+- Tests and docs still drift on module names: `assembly` vs `assembler`, `attribution` vs `transcription.attributor`, and `util` vs `utils`.
+- `PipelineConfig` compatibility is currently provided by aliasing `ParlerConfig`.
 - Some runtime dependencies are implied by tests but not yet declared in `pyproject.toml` (`requests`, YAML parser) [inference].
+- The current interpreter does not have `pytest` installed [verify], so formal test execution may require dependency bootstrapping first.

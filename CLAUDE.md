@@ -24,12 +24,27 @@
 <repo_state>
 
 - Repository status on `2026-04-09`: implementation-ready baseline, not implementation-complete.
-- The `parler/` runtime package described by `SDD.md` does not exist yet. Agents are expected to create it.
+- Phase 1 baseline is now implemented: `parler/` exists with canonical models, errors, config loading, local serialization/hashing, a minimal renderer, and a minimal orchestrator/state surface.
+- Later phases are still incomplete: no audio ingestion, transcription, attribution, extraction, export adapters, retry layer, or cache implementations exist yet.
 - No CI workflow file is committed under `.github/workflows/`.
 - E2E fixture audio/transcript/extraction assets referenced by tests are not committed yet; only `tests/fixtures/decision_logs/fr_meeting_5min_expected.json` exists.
 - Git history is linear and docs/tests-heavy; current branch is `main`.
 
 </repo_state>
+
+<implementation_status>
+
+| Area | Status | Notes |
+|---|---|---|
+| Phase 1 package skeleton | complete | `parler/__init__.py`, `errors.py`, `models.py`, `config.py`, `util/`, `rendering/`, `pipeline/` exist |
+| Config loading | complete | TOML, JSON, minimal YAML, env override, CLI override, validation, secret scrubbing |
+| Canonical models | complete | frozen dataclasses with compatibility defaults for current tests |
+| Rendering surface | partial | Markdown/HTML/JSON implemented; enough for current rendering tests |
+| Orchestrator surface | partial | state machine, checkpoint save/load, cost gate, callbacks, and soft-fail attribution behavior implemented |
+| Audio / transcription / extraction domains | not started | later phases still need real implementations |
+| Formal pytest verification | blocked in current interpreter [verify] | `python3 -m pytest` fails because `pytest` is not installed locally |
+
+</implementation_status>
 
 <structure>
 
@@ -45,7 +60,7 @@ rfcs/                    # Historical component records; SPEC/SDD win on conflic
 features/                # BDD acceptance contracts [gated]
 tests/                   # pytest TDD/integration/property/E2E/benchmark contracts [gated]
 tests/fixtures/          # Synthetic fixture policy; actual audio/transcript assets mostly missing [gated]
-parler/                  # Expected runtime package; absent as of 2026-04-09 [agent: create/modify]
+parler/                  # Runtime package; Phase 1 baseline exists [agent: modify]
 .codex/skills/           # Repo-local agent skills [agent: create/modify]
 .claude/skills -> ../.codex/skills
 .agents/skills -> ../.codex/skills
@@ -57,6 +72,7 @@ Expected package boundary from `SDD.md`:
 
 ```text
 parler/
+  __init__.py
   cli.py
   config.py
   errors.py
@@ -76,16 +92,16 @@ parler/
 
 <commands>
 
-Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
+Commands marked `Phase 2+` assume later domain modules exist. Phase 1 files are present now.
 
 | Task | Command | Phase | Notes |
 |---|---|---|---|
 | Read canonical headings | `rg -n "^## |^### " SPEC.md SDD.md TESTING.md IMPLEMENTATION_PLAN.md` | now | fastest orientation pass |
-| Bootstrap package skeleton | `mkdir -p parler/{audio,transcription,attribution,extraction,rendering,export,pipeline,util,prompts}` | now | create only the slice you need plus `__init__.py` files |
-| Install dev deps | `python3 -m pip install -e '.[dev]'` | Phase 1+ | likely blocked until `parler/` exists |
-| Focused unit slice | `pytest tests/unit/test_config_loading.py -q` | Phase 1+ | recommended first green test |
-| Fast verification | `pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 1+ | canonical fast path from `TESTING.md` |
-| E2E | `pytest tests/e2e -v -s -m slow` | Phase 8 | requires `MISTRAL_API_KEY` and generated fixtures [verify] |
+| Install dev deps | `python3 -m pip install -e '.[dev]'` | now | needed before formal pytest verification in this interpreter |
+| Focused unit slice | `python3 -m pytest tests/unit/test_config_loading.py -q` | now | Phase 1 anchor; blocked until `pytest` is installed locally |
+| Focused render/orchestrator slice | `python3 -m pytest tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py -q` | now | validates the current Phase 1 compatibility surface |
+| Fast verification | `python3 -m pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 2+ | canonical fast path from `TESTING.md` |
+| E2E | `python3 -m pytest tests/e2e -v -s -m slow` | Phase 8 | requires `MISTRAL_API_KEY`, generated fixtures, and installed test deps [verify] |
 | Benchmarks | `pytest tests/benchmarks --benchmark-only` | Phase 8 | not for day-to-day changes |
 | Lint | `ruff check .` | Phase 1+ | run before finalizing |
 | Format | `ruff format .` | Phase 1+ | repo formatting standard |
@@ -110,7 +126,8 @@ Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
       - Treat `SPEC.md` and `SDD.md` as the source of truth; read them before assuming a test or RFC is correct.
       - Keep `assemble_chunks`, deadline resolution, parser normalization, retry logic, and cache-key builders pure and separately testable.
       - Preserve transcript segment IDs and timestamps; speaker turns are a rendering concern, not a mutation of canonical transcript structure.
-      - Add compatibility shims for known drift points: `parler.transcription.assembler`, `parler.transcription.attributor`, `parler.utils.retry`, and `PipelineConfig`.
+      - Keep the current compatibility baseline: canonical Phase 1 modules plus `PipelineConfig = ParlerConfig`.
+      - Add compatibility shims for remaining drift points only when a new test surface requires them: `parler.transcription.assembler`, `parler.transcription.attributor`, and `parler.utils.retry`.
       - Keep export adapters isolated from renderer logic; local output success must survive export failure.
       - Treat checkpoints and caches as sensitive local artifacts; use restrictive permissions where the OS supports them.
     </do>
@@ -134,7 +151,7 @@ Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
   <implementation_slice>
     1. Read the relevant phase in `IMPLEMENTATION_PLAN.md`.
     2. Read the matching `SPEC.md` / `SDD.md` sections and the narrowest defining tests/features.
-    3. If `parler/` is absent, create only the modules required for that slice plus `__init__.py`.
+    3. Reuse the Phase 1 baseline instead of rebuilding it; add only the domain modules required for the active slice.
     4. Implement pure models/config/helpers first, then adapters, then orchestration glue.
     5. Add compatibility shims when import-path drift would otherwise block progress.
     6. Run the narrowest tests first, then widen to related unit/integration/BDD coverage.
@@ -163,7 +180,7 @@ Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
 
 | Path | Zone | Reason |
 |---|---|---|
-| `parler/` | autonomous | primary implementation surface; currently missing |
+| `parler/` | autonomous | primary implementation surface; Phase 1 baseline exists |
 | `.codex/skills/`, `CLAUDE.md`, `agents.md` | autonomous | repo-local agent context |
 | `README.md`, `SPEC.md`, `SDD.md`, `TESTING.md`, `IMPLEMENTATION_PLAN.md`, `pyproject.toml` | gated | public/tooling/canonical contract files |
 | `rfcs/`, `features/`, `tests/`, `tests/fixtures/` | gated | contract and verification artifacts; update deliberately |
@@ -201,7 +218,7 @@ Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: No module named 'parler'` | repo has no runtime package yet | start Phase 1 and create the minimal `parler/` skeleton before running tests |
+| `python3 -m pytest: No module named pytest` | current interpreter lacks test dependencies | install dev deps before formal verification |
 | `ModuleNotFoundError: parler.transcription.assembler` or `...attributor` | import-path drift between tests and `SDD.md` | add compatibility shims or coordinate an approved rename |
 | `ModuleNotFoundError: parler.utils.retry` | tests import `utils`, design docs say `util` | expose `parler/utils/` shim or normalize references in one coordinated pass |
 | `ConfigError: api_key` or CLI exit code `3` | `MISTRAL_API_KEY` / `PARLER_API_KEY` missing | set one env var; never hardcode the key |
@@ -249,11 +266,13 @@ Commands marked `Phase 1+` assume the `parler/` package skeleton exists.
     - `2026-04-09`: diarization is hybrid and ordered as vendor diarization -> existing upstream IDs -> text-only fallback.
     - `2026-04-09`: transcription and extraction caches must use semantic fingerprints, not weak content-hash shortcuts.
     - `2026-04-09`: the repository is intentionally spec/test-first; grow `parler/` via vertical slices, not a full scaffold dump.
+    - `2026-04-09`: Phase 1 is implemented with a compatibility-oriented baseline; later phases should extend it rather than replacing it wholesale.
   </project_decisions>
 
   <lessons_learned>
     - Contract drift is the dominant project risk. Read the canonical docs before trusting an individual test import path.
     - E2E failure can mean missing synthetic fixtures, not broken application code.
     - Compatibility shims are cheaper and safer than broad rewrites while the baseline is still settling.
+    - The current local interpreter still lacks `pytest`; smoke tests may be the only available verification until dev deps are installed.
   </lessons_learned>
 </memory>
