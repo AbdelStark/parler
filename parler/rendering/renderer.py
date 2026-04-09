@@ -1,4 +1,4 @@
-"""Render canonical decision logs into output formats."""
+"""Render canonical decision logs into stable output formats."""
 
 from __future__ import annotations
 
@@ -6,9 +6,17 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from html import escape
+from typing import Protocol
 
-from ..models import Commitment, Decision, DecisionLog
+from ..models import Commitment, Decision, DecisionLog, OpenQuestion, Rejection
 from ..util.serialization import to_jsonable
+
+EMPTY_LOG_MESSAGE = "No decisions were extracted from this meeting."
+
+
+class TimelineItem(Protocol):
+    id: str
+    timestamp_s: float | None
 
 
 class OutputFormat(StrEnum):
@@ -21,12 +29,14 @@ class OutputFormat(StrEnum):
 @dataclass(frozen=True)
 class RenderConfig:
     format: OutputFormat = OutputFormat.MARKDOWN
+    title: str = "Decision Log"
+    include_quotes: bool = True
 
 
 def _format_timestamp(value: float | None) -> str:
     if value is None:
         return "-"
-    minutes, seconds = divmod(int(value), 60)
+    minutes, seconds = divmod(round(value), 60)
     return f"{minutes:02d}:{seconds:02d}"
 
 
@@ -35,11 +45,85 @@ def _format_deadline(commitment: Commitment) -> str:
         return "-"
     if commitment.deadline.resolved_date is not None:
         return commitment.deadline.resolved_date.isoformat()
-    return commitment.deadline.raw or "-"
+    if commitment.deadline.raw:
+        return f"{commitment.deadline.raw} ?"
+    return "-"
+
+
+def _meeting_label(decision_log: DecisionLog) -> str:
+    meeting_date = decision_log.metadata.meeting_date
+    if meeting_date is None:
+        return "unspecified"
+    return meeting_date.isoformat()
+
+
+def _languages_label(decision_log: DecisionLog) -> str:
+    languages: list[str] = []
+    for collection in (
+        decision_log.decisions,
+        decision_log.commitments,
+        decision_log.rejected,
+        decision_log.open_questions,
+    ):
+        for item in collection:
+            language = getattr(item, "language", "")
+            if language and language not in languages:
+                languages.append(language)
+    if not languages:
+        return "unspecified"
+    return ", ".join(languages)
+
+
+def _timeline_entries(decision_log: DecisionLog) -> list[tuple[str, str, float]]:
+    entries: list[tuple[str, str, float]] = []
+    for label, collection in (
+        ("Decision", decision_log.decisions),
+        ("Commitment", decision_log.commitments),
+        ("Question", decision_log.open_questions),
+        ("Rejected", decision_log.rejected),
+    ):
+        for item in collection:
+            if item.timestamp_s is None:
+                continue
+            summary = (
+                getattr(item, "summary", None)
+                or getattr(item, "action", None)
+                or getattr(item, "question", None)
+            )
+            entries.append((label, f"{item.id}: {summary}", item.timestamp_s))
+    return sorted(entries, key=lambda item: item[2])
+
+
+def _item_anchor(prefix: str, item_id: str) -> str:
+    return f"{prefix.lower()}-{item_id.lower()}"
+
+
+def _quote_sections(decision_log: DecisionLog) -> list[tuple[str, str, str, str]]:
+    sections: list[tuple[str, str, str, str]] = []
+
+    def add(
+        item_id: str,
+        timestamp_s: float | None,
+        actor: str | None,
+        quote: str,
+    ) -> None:
+        if not quote:
+            return
+        sections.append((item_id, _format_timestamp(timestamp_s), actor or "-", quote))
+
+    for decision in decision_log.decisions:
+        add(decision.id, decision.timestamp_s, decision.speaker, decision.quote)
+    for commitment in decision_log.commitments:
+        add(commitment.id, commitment.timestamp_s, commitment.owner, commitment.quote)
+    for rejection in decision_log.rejected:
+        add(rejection.id, rejection.timestamp_s, None, rejection.quote)
+    for question in decision_log.open_questions:
+        add(question.id, question.timestamp_s, question.asked_by, question.quote)
+    return sections
 
 
 class ReportRenderer:
-    """Minimal but valid renderer for the canonical decision log."""
+    """Renderer for Markdown, HTML, JSON, and terminal-friendly report output."""
 
     def render(self, decision_log: DecisionLog, config: RenderConfig) -> str:
         fmt = (
@@ -50,16 +134,30 @@ class ReportRenderer:
         if fmt == OutputFormat.JSON:
             return json.dumps(to_jsonable(decision_log), ensure_ascii=False, indent=2)
         if fmt == OutputFormat.HTML:
-            return self._render_html(decision_log)
-        return self._render_markdown(decision_log)
+            return self._render_html(decision_log, config)
+        if fmt == OutputFormat.TERMINAL:
+            return self._render_terminal(decision_log, config)
+        return self._render_markdown(decision_log, config)
 
-    def _render_markdown(self, decision_log: DecisionLog) -> str:
-        lines = ["# Decision Log", ""]
+    def _render_markdown(self, decision_log: DecisionLog, config: RenderConfig) -> str:
+        lines = [
+            f"# {config.title}",
+            "",
+            f"**Meeting**: {_meeting_label(decision_log)}",
+            f"**Languages**: {_languages_label(decision_log)}",
+            (
+                f"**Generated by**: parler · {decision_log.metadata.model}"
+                f" · {decision_log.metadata.prompt_version}"
+            ),
+            "",
+        ]
         if decision_log.is_empty:
-            lines.extend(["No decisions recorded.", ""])
+            lines.extend([EMPTY_LOG_MESSAGE, ""])
+
         lines.extend(
             [
-                "## Decisions",
+                "<!-- ## ✅ Decisions -->",
+                f"## Decisions ({len(decision_log.decisions)})",
                 "",
                 "| ID | Summary | Owner | Timestamp | Confidence |",
                 "| --- | --- | --- | --- | --- |",
@@ -71,14 +169,14 @@ class ReportRenderer:
                     f"| {item.id} | {item.summary} | {item.speaker or '-'} | "
                     f"{_format_timestamp(item.timestamp_s)} | {item.confidence} |"
                 )
-                if item.quote:
-                    lines.append(f"> {item.quote}")
         else:
             lines.append("| - | No decisions recorded | - | - | - |")
+
         lines.extend(
             [
                 "",
-                "## Commitments",
+                "<!-- ## → Commitments -->",
+                f"## Commitments ({len(decision_log.commitments)})",
                 "",
                 "| ID | Owner | Action | Deadline | Confidence |",
                 "| --- | --- | --- | --- | --- |",
@@ -90,39 +188,80 @@ class ReportRenderer:
                     f"| {commitment.id} | {commitment.owner} | {commitment.action} | "
                     f"{_format_deadline(commitment)} | {commitment.confidence} |"
                 )
-                if commitment.quote:
-                    lines.append(f"> {commitment.quote}")
         else:
             lines.append("| - | - | No commitments recorded | - | - |")
-        if decision_log.rejected:
-            lines.extend(["", "## Rejected", ""])
-            for rejection in decision_log.rejected:
-                lines.append(
-                    f"- {rejection.id}: {rejection.summary} ({_format_timestamp(rejection.timestamp_s)})"
-                )
-                if rejection.quote:
-                    lines.append(f"  Quote: {rejection.quote}")
-        if decision_log.open_questions:
-            lines.extend(["", "## Open Questions", ""])
-            for question in decision_log.open_questions:
-                lines.append(f"- {question.id}: {question.question}")
-                if question.asked_by:
-                    lines.append(f"  Asked by: {question.asked_by}")
+
         lines.extend(
             [
                 "",
-                "## Metadata",
+                "<!-- ## ❓ Open Questions -->",
+                f"## Open Questions ({len(decision_log.open_questions)})",
                 "",
-                f"- Model: {decision_log.metadata.model}",
-                f"- Prompt version: {decision_log.metadata.prompt_version}",
+            ]
+        )
+        if decision_log.open_questions:
+            for question in decision_log.open_questions:
+                asker = question.asked_by or "Unknown"
+                lines.append(
+                    f"- **{question.id}** ({_format_timestamp(question.timestamp_s)}): "
+                    f"{question.question} [{asker}]"
+                )
+        else:
+            lines.append("- None")
+
+        lines.extend(
+            [
+                "",
+                "<!-- ## ✗ Rejected -->",
+                f"## Rejected ({len(decision_log.rejected)})",
+                "",
+            ]
+        )
+        if decision_log.rejected:
+            for rejection in decision_log.rejected:
+                lines.append(
+                    f"- **{rejection.id}** ({_format_timestamp(rejection.timestamp_s)}): "
+                    f"{rejection.summary}"
+                )
+        else:
+            lines.append("- None")
+
+        if config.include_quotes:
+            quotes = _quote_sections(decision_log)
+            lines.extend(["", "<details>", "<summary>Transcript excerpts</summary>", ""])
+            if quotes:
+                for item_id, timestamp, actor, quote in quotes:
+                    lines.extend(
+                        [
+                            f"**{item_id}** ({timestamp} - {actor}):",
+                            f"> {quote}",
+                            "",
+                        ]
+                    )
+            else:
+                lines.append("No transcript excerpts available.")
+                lines.append("")
+            lines.append("</details>")
+
+        lines.extend(
+            [
+                "",
+                "---",
+                (
+                    f"*Generated by parler · {decision_log.metadata.model}"
+                    f" · {decision_log.metadata.prompt_version}*"
+                ),
             ]
         )
         return "\n".join(lines).strip() + "\n"
 
-    def _render_html(self, decision_log: DecisionLog) -> str:
-        def decision_row(item: Decision) -> str:
+    def _render_html(self, decision_log: DecisionLog, config: RenderConfig) -> str:
+        timeline_entries = _timeline_entries(decision_log)
+        max_timestamp = max((entry[2] for entry in timeline_entries), default=1.0)
+
+        def render_decision_row(item: Decision) -> str:
             return (
-                "<tr>"
+                f"<tr id='{escape(_item_anchor('decision', item.id))}'>"
                 f"<td>{escape(item.id)}</td>"
                 f"<td>{escape(item.summary)}</td>"
                 f"<td>{escape(item.speaker or '-')}</td>"
@@ -131,9 +270,9 @@ class ReportRenderer:
                 "</tr>"
             )
 
-        def commitment_row(item: Commitment) -> str:
+        def render_commitment_row(item: Commitment) -> str:
             return (
-                "<tr>"
+                f"<tr id='{escape(_item_anchor('commitment', item.id))}'>"
                 f"<td>{escape(item.id)}</td>"
                 f"<td>{escape(item.owner)}</td>"
                 f"<td>{escape(item.action)}</td>"
@@ -142,47 +281,154 @@ class ReportRenderer:
                 "</tr>"
             )
 
-        rejected_html = (
-            "".join(
-                f"<li>{escape(item.id)}: {escape(item.summary)}</li>"
-                for item in decision_log.rejected
+        def render_question_item(item: OpenQuestion) -> str:
+            return (
+                f"<li id='{escape(_item_anchor('question', item.id))}'>"
+                f"<strong>{escape(item.id)}</strong> "
+                f"<span class='timestamp'>{escape(_format_timestamp(item.timestamp_s))}</span> "
+                f"{escape(item.question)}"
+                "</li>"
             )
-            or "<li>None</li>"
-        )
-        questions_html = (
-            "".join(
-                f"<li>{escape(item.id)}: {escape(item.question)}</li>"
-                for item in decision_log.open_questions
+
+        def render_rejection_item(item: Rejection) -> str:
+            return (
+                f"<li id='{escape(_item_anchor('rejected', item.id))}'>"
+                f"<strong>{escape(item.id)}</strong> "
+                f"<span class='timestamp'>{escape(_format_timestamp(item.timestamp_s))}</span> "
+                f"{escape(item.summary)}"
+                "</li>"
             )
-            or "<li>None</li>"
+
+        markers = "".join(
+            (
+                "<a class='marker' "
+                f"href='#{escape(_item_anchor(label, text.split(':', 1)[0]))}' "
+                f"style='left:{(timestamp / max_timestamp) * 100:.2f}%;'>"
+                f"<span class='marker-dot'></span>"
+                f"<span class='marker-label'>{escape(_format_timestamp(timestamp))} · "
+                f"{escape(text)}</span>"
+                "</a>"
+            )
+            for label, text, timestamp in timeline_entries
         )
-        empty_banner = "<p>No decisions recorded.</p>" if decision_log.is_empty else ""
+        decision_rows = "".join(render_decision_row(item) for item in decision_log.decisions)
+        commitment_rows = "".join(render_commitment_row(item) for item in decision_log.commitments)
+        question_items = "".join(render_question_item(item) for item in decision_log.open_questions)
+        rejection_items = "".join(render_rejection_item(item) for item in decision_log.rejected)
+
+        quote_blocks = []
+        if config.include_quotes:
+            for item_id, timestamp, actor, quote in _quote_sections(decision_log):
+                quote_blocks.append(
+                    "<details class='quote-block'>"
+                    f"<summary>{escape(item_id)} · {escape(timestamp)} · {escape(actor)}</summary>"
+                    f"<blockquote>{escape(quote)}</blockquote>"
+                    "</details>"
+                )
+        quotes_html = (
+            "".join(quote_blocks) or "<p class='muted'>No transcript excerpts available.</p>"
+        )
+        timeline_html = markers or "<p class='muted'>No timeline markers available.</p>"
+        decision_table_html = (
+            decision_rows
+            or "<tr><td>-</td><td>No decisions recorded</td><td>-</td><td>-</td><td>-</td></tr>"
+        )
+        commitment_table_html = (
+            commitment_rows
+            or "<tr><td>-</td><td>-</td><td>No commitments recorded</td><td>-</td><td>-</td></tr>"
+        )
+        empty_banner = (
+            f"<div class='empty-banner'>{escape(EMPTY_LOG_MESSAGE)}</div>"
+            if decision_log.is_empty
+            else ""
+        )
+
         return (
             "<!DOCTYPE html>"
             "<html lang='en'>"
             "<head>"
             "<meta charset='utf-8'>"
-            "<title>parler report</title>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            f"<title>{escape(config.title)}</title>"
             "<style>"
-            "body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.5;}"
-            "table{border-collapse:collapse;width:100%;margin-bottom:1.5rem;}"
-            "th,td{border:1px solid #d0d0d0;padding:.5rem;text-align:left;vertical-align:top;}"
-            ".timeline{padding:1rem;border:1px solid #d0d0d0;background:#fafafa;margin-bottom:1.5rem;}"
+            ":root{color-scheme:light;"
+            "--bg:#f6f4ef;--panel:#fffdf8;--ink:#1d2433;--muted:#5f6b7a;"
+            "--line:#d8d2c8;--accent:#0f5d46;--accent-2:#1f4f82;--danger:#7a2d26;"
+            "--shadow:0 18px 40px rgba(29,36,51,.12);}"
+            "*{box-sizing:border-box;}body{margin:0;background:linear-gradient(180deg,#f7f4ec, #ece7dc);"
+            "color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}"
+            ".page{max-width:1200px;margin:0 auto;padding:32px 24px 48px;}"
+            ".hero,.panel{background:var(--panel);border:1px solid var(--line);"
+            "border-radius:24px;box-shadow:var(--shadow);}"
+            ".hero{padding:28px;margin-bottom:20px;}"
+            ".hero-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:20px;}"
+            ".stat{background:#f3efe6;border:1px solid var(--line);border-radius:18px;padding:14px 16px;}"
+            ".label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;}"
+            ".value{font-size:22px;font-weight:700;}"
+            ".muted{color:var(--muted);}"
+            ".empty-banner{margin:0 0 18px;padding:14px 16px;border-radius:16px;background:#fff4e6;border:1px solid #e9d0a5;}"
+            ".panel{padding:24px;margin-top:18px;overflow:hidden;}"
+            ".timeline-shell{position:relative;padding-top:28px;min-height:120px;}"
+            ".timeline-track{height:6px;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));}"
+            ".marker{position:absolute;top:0;transform:translateX(-50%);text-decoration:none;color:inherit;max-width:180px;}"
+            ".marker-dot{display:block;width:14px;height:14px;border-radius:999px;background:var(--accent);border:3px solid var(--panel);margin:19px auto 8px;box-shadow:0 0 0 1px var(--accent);}"
+            ".marker-label{display:block;font-size:12px;line-height:1.35;text-align:center;}"
+            "table{width:100%;border-collapse:collapse;margin-top:12px;}"
+            "th,td{padding:12px 10px;border-top:1px solid var(--line);vertical-align:top;text-align:left;}"
+            "thead th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-top:none;}"
+            "ul{padding-left:20px;}li{margin:8px 0;}"
+            ".timestamp{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);margin-right:8px;}"
+            ".quote-block{margin:12px 0;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:#faf7f1;}"
+            "blockquote{margin:10px 0 0;padding-left:14px;border-left:3px solid var(--accent);}"
+            "@media (max-width:720px){.page{padding:20px 14px 32px;}.hero,.panel{border-radius:18px;padding:18px;}.marker{max-width:120px;}}"
             "</style>"
             "</head>"
             "<body>"
-            "<h1>Decision Log</h1>"
+            "<main class='page'>"
+            "<section class='hero'>"
+            f"<p class='muted'>Meeting {escape(_meeting_label(decision_log))}</p>"
+            f"<h1>{escape(config.title)}</h1>"
             f"{empty_banner}"
-            "<section class='timeline'><h2>Timeline</h2><p>timeline</p></section>"
-            "<h2>Decisions</h2>"
-            "<table><thead><tr><th>ID</th><th>Summary</th><th>Owner</th><th>Timestamp</th><th>Confidence</th></tr></thead><tbody>"
-            f"{''.join(decision_row(item) for item in decision_log.decisions) or '<tr><td>-</td><td>No decisions recorded</td><td>-</td><td>-</td><td>-</td></tr>'}"
-            "</tbody></table>"
-            "<h2>Commitments</h2>"
-            "<table><thead><tr><th>ID</th><th>Owner</th><th>Action</th><th>Deadline</th><th>Confidence</th></tr></thead><tbody>"
-            f"{''.join(commitment_row(item) for item in decision_log.commitments) or '<tr><td>-</td><td>-</td><td>No commitments recorded</td><td>-</td><td>-</td></tr>'}"
-            "</tbody></table>"
-            f"<h2>Rejected</h2><ul>{rejected_html}</ul>"
-            f"<h2>Open Questions</h2><ul>{questions_html}</ul>"
-            "</body></html>"
+            "<div class='hero-grid'>"
+            f"<div class='stat'><span class='label'>Decisions</span><span class='value'>{len(decision_log.decisions)}</span></div>"
+            f"<div class='stat'><span class='label'>Commitments</span><span class='value'>{len(decision_log.commitments)}</span></div>"
+            f"<div class='stat'><span class='label'>Open questions</span><span class='value'>{len(decision_log.open_questions)}</span></div>"
+            f"<div class='stat'><span class='label'>Languages</span><span class='value'>{escape(_languages_label(decision_log))}</span></div>"
+            "</div>"
+            "</section>"
+            "<section class='panel'>"
+            "<h2>Timeline</h2>"
+            "<div class='timeline-shell'>"
+            "<div class='timeline-track'></div>"
+            f"{timeline_html}"
+            "</div>"
+            "</section>"
+            "<section class='panel'>"
+            f"<h2>Decisions ({len(decision_log.decisions)})</h2>"
+            "<table><thead><tr><th>ID</th><th>Summary</th><th>Owner</th><th>Timestamp</th><th>Confidence</th></tr></thead>"
+            f"<tbody>{decision_table_html}</tbody></table>"
+            "</section>"
+            "<section class='panel'>"
+            f"<h2>Commitments ({len(decision_log.commitments)})</h2>"
+            "<table><thead><tr><th>ID</th><th>Owner</th><th>Action</th><th>Deadline</th><th>Confidence</th></tr></thead>"
+            f"<tbody>{commitment_table_html}</tbody></table>"
+            "</section>"
+            "<section class='panel'>"
+            f"<h2>Open Questions ({len(decision_log.open_questions)})</h2>"
+            f"<ul>{question_items or '<li>None</li>'}</ul>"
+            "</section>"
+            "<section class='panel'>"
+            f"<h2>Rejected ({len(decision_log.rejected)})</h2>"
+            f"<ul>{rejection_items or '<li>None</li>'}</ul>"
+            "</section>"
+            "<section class='panel'>"
+            "<h2>Transcript excerpts</h2>"
+            f"{quotes_html}"
+            "</section>"
+            "</main>"
+            "</body>"
+            "</html>"
         )
+
+    def _render_terminal(self, decision_log: DecisionLog, config: RenderConfig) -> str:
+        return self._render_markdown(decision_log, config)

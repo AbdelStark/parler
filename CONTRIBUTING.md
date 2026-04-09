@@ -15,6 +15,7 @@ This creates `.venv/` and installs the project in editable mode.
 
 ```bash
 uv run pytest tests/unit/test_config_loading.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py -q
+uv run pytest tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q
 uv run python tests/smoke_test.py
 uv run ruff check parler tests/smoke_test.py
 uv run ruff format --check parler tests/smoke_test.py
@@ -22,7 +23,7 @@ uv run mypy parler/
 uv build
 ```
 
-The wider `tests/`, `features/`, and roadmap modules are intentionally ahead of the currently implemented phases. Keep CI green by expanding the validated surface only when a phase is actually delivered; after Phase 4, the next major unfinished domain is extraction.
+The wider `tests/`, `features/`, and roadmap modules are intentionally ahead of the currently implemented phases. Keep CI green by expanding the validated surface only when a phase is actually delivered; after Phase 6, the next major unfinished domains are broader CLI/export wiring and fully provisioned E2E fixtures.
 
 ## Contribution rules
 

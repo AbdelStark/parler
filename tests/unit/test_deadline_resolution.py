@@ -14,13 +14,12 @@ Design contract:
     (e.g., "next Monday" means the Monday AFTER meeting_date, never before)
 """
 
-import pytest
 from datetime import date
+
 from parler.extraction.deadline_resolver import resolve_deadline
 
-
-# ─── Wednesday 2026-04-09 is our test anchor ────────────────────────────────
-ANCHOR = date(2026, 4, 9)  # Wednesday
+# ─── Thursday 2026-04-09 is our test anchor ─────────────────────────────────
+ANCHOR = date(2026, 4, 9)  # Thursday
 
 
 class TestEnglishDeadlines:
@@ -32,12 +31,12 @@ class TestEnglishDeadlines:
         assert resolve_deadline("next Friday", ANCHOR, "en") == date(2026, 4, 17)
 
     def test_by_friday(self):
-        # "by Friday" == "next Friday" from a Wednesday
+        # "by Friday" == "next Friday" from a Thursday anchor
         assert resolve_deadline("by Friday", ANCHOR, "en") == date(2026, 4, 17)
 
     def test_this_friday(self):
-        # "this Friday" from Wednesday = same week's Friday = April 11
-        assert resolve_deadline("this Friday", ANCHOR, "en") == date(2026, 4, 11)
+        # "this Friday" from Thursday = same week's Friday = April 10
+        assert resolve_deadline("this Friday", ANCHOR, "en") == date(2026, 4, 10)
 
     def test_end_of_week(self):
         assert resolve_deadline("end of week", ANCHOR, "en") == date(2026, 4, 11)
@@ -95,8 +94,8 @@ class TestFrenchDeadlines:
         assert resolve_deadline("d'ici vendredi", ANCHOR, "fr") == date(2026, 4, 17)
 
     def test_ce_vendredi(self):
-        # "ce vendredi" (this Friday) from Wednesday = April 11
-        assert resolve_deadline("ce vendredi", ANCHOR, "fr") == date(2026, 4, 11)
+        # "ce vendredi" (this Friday) from Thursday = April 10
+        assert resolve_deadline("ce vendredi", ANCHOR, "fr") == date(2026, 4, 10)
 
     def test_fin_de_semaine(self):
         assert resolve_deadline("fin de semaine", ANCHOR, "fr") == date(2026, 4, 11)

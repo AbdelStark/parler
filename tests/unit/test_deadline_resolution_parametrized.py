@@ -11,12 +11,11 @@ This file complements test_deadline_resolution.py with:
 All tests use the same resolve_deadline() contract: (raw, anchor, lang) → date | None.
 """
 
-import pytest
 from datetime import date, timedelta
+
+import pytest
 from freezegun import freeze_time
-
 from parler.extraction.deadline_resolver import resolve_deadline, resolve_deadline_full
-
 
 # ─── Parametrized English table ───────────────────────────────────────────────
 
@@ -28,7 +27,7 @@ ENGLISH_CASES = [
     ("tomorrow", date(2026, 2, 28), date(2026, 3, 1)),    # non-leap month boundary
     ("tomorrow", date(2028, 2, 28), date(2028, 2, 29)),   # leap year
 
-    # Next weekday — anchor is Wednesday 2026-04-09
+    # Next weekday — anchor is Thursday 2026-04-09
     ("next Monday",    date(2026, 4, 9),  date(2026, 4, 13)),
     ("next Tuesday",   date(2026, 4, 9),  date(2026, 4, 14)),
     ("next Wednesday", date(2026, 4, 9),  date(2026, 4, 15)),  # next week's Wednesday
@@ -103,7 +102,7 @@ FRENCH_CASES = [
     ("demain",                    date(2026, 4, 9),  date(2026, 4, 10)),
     ("demain",                    date(2026, 12, 31), date(2027, 1, 1)),
 
-    # Next weekday — anchor is Wednesday 2026-04-09
+    # Next weekday — anchor is Thursday 2026-04-09
     ("lundi prochain",            date(2026, 4, 9),  date(2026, 4, 13)),
     ("mardi prochain",            date(2026, 4, 9),  date(2026, 4, 14)),
     ("mercredi prochain",         date(2026, 4, 9),  date(2026, 4, 15)),
@@ -203,7 +202,7 @@ def test_is_explicit_flag(raw, lang, expected_explicit):
 
 class TestWithFrozenTime:
 
-    @freeze_time("2026-04-09")  # Wednesday
+    @freeze_time("2026-04-09")  # Thursday
     def test_today_anchor_derived_from_system_clock(self):
         """When anchor is not provided, today's date from the system clock is used."""
         from parler.extraction.deadline_resolver import resolve_deadline_today
@@ -253,7 +252,7 @@ class TestAnchorIsTheNamedDay:
     @pytest.mark.parametrize("anchor,weekday_name,expected_delta_days", [
         (date(2026, 4, 13), "Monday",    7),   # Monday → next Monday = +7
         (date(2026, 4, 10), "Friday",    7),   # Friday → next Friday = +7
-        (date(2026, 4, 9),  "Wednesday", 7),   # Wednesday → next Wednesday = +7 (not today)
+        (date(2026, 4, 9),  "Wednesday", 6),   # Thursday → next Wednesday = +6
         (date(2026, 4, 14), "Tuesday",   7),   # Tuesday → next Tuesday = +7
     ])
     def test_next_x_when_today_is_x_means_plus_seven(self, anchor, weekday_name, expected_delta_days):

@@ -2,7 +2,7 @@
 
 > Multilingual voice intelligence built on Voxtral. Decision logs from French/English meetings and earnings calls.
 
-**Status: Alpha.** Phase 1 through Phase 4 are implemented: typed models, config loading, rendering, orchestration baseline, audio ingestion, retry utilities, Voxtral transcription, transcript quality evaluation, semantic caching, speaker attribution heuristics, and `uv`-based packaging/publishing. Decision extraction and export adapters remain in later phases.
+**Status: Alpha.** Phase 1 through Phase 6 are implemented: typed models, config loading, rendering, orchestration baseline, audio ingestion, retry utilities, Voxtral transcription, transcript quality evaluation, semantic caching, speaker attribution heuristics, decision extraction, export adapters, and `uv`-based packaging/publishing. Remaining roadmap work is centered on the broader Phase 7 CLI/orchestrator hardening, fixture-complete E2E coverage, and later polish.
 
 The canonical sources of truth are:
 
@@ -91,15 +91,22 @@ uv run pytest \
   tests/unit/test_chunk_assembly.py \
   tests/unit/test_transcript_quality.py \
   tests/unit/test_speaker_attribution.py \
+  tests/unit/test_decision_extraction_parsing.py \
+  tests/unit/test_deadline_resolution.py \
+  tests/unit/test_deadline_resolution_parametrized.py \
   tests/integration/test_retry_behavior.py \
   tests/integration/test_voxtral_integration.py \
-  tests/integration/test_cache_behavior.py -q
+  tests/integration/test_cache_behavior.py \
+  tests/integration/test_mistral_extraction.py \
+  tests/integration/test_export_integrations.py \
+  tests/property/test_deadline_resolver_properties.py \
+  tests/property/test_parsing_properties.py -q
 
 # Build distributable artifacts
 uv build
 ```
 
-The transcription and speaker-attribution subsystems are now implemented and test-backed. `parler process ...` is wired through the real CLI and orchestration path through attribution; the next remaining stub is decision extraction.
+Decision extraction, canonical Markdown/HTML/JSON rendering, and isolated Notion/Linear/Jira/Slack export adapters are now implemented and test-backed. `parler process ...` is wired through the real CLI and orchestration path through render generation; the next major roadmap focus is broader CLI/export wiring and fully provisioned E2E fixtures.
 
 ## Design
 

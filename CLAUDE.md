@@ -24,9 +24,9 @@
 <repo_state>
 
 - Repository status on `2026-04-09`: implementation in progress, not implementation-complete.
-- Phase 1 through Phase 5 are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, a minimal renderer, a minimal orchestrator/state surface, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, prompt scaffolding, and compatibility shims.
-- Later phases are still incomplete: export adapters and broader CLI/report surfaces remain to be built.
-- Known contract drift remains in the deadline tests: three assertions still treat `2026-04-09` as the wrong weekday. The implemented resolver follows the broader calendar-consistent parametrized/property contract.
+- Phase 1 through Phase 6 are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, stable Markdown/HTML/JSON rendering, a minimal orchestrator/state surface, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, export adapters, prompt scaffolding, and compatibility shims.
+- Later phases are still incomplete: broader CLI/export wiring, fixture-complete E2E coverage, and remaining hardening/polish work remain to be built.
+- The deadline test drift from earlier Phase 5 work is reconciled locally: the suite now treats `2026-04-09` as Thursday, which matches the implemented resolver and the broader parametrized/property contract.
 - CI and publishing workflows now exist under `.github/workflows/`.
 - E2E fixture audio/transcript/extraction assets referenced by tests are not committed yet; only `tests/fixtures/decision_logs/fr_meeting_5min_expected.json` exists.
 - Git history is linear and docs/tests-heavy; current branch is `main`.
@@ -40,15 +40,15 @@
 | Phase 1 package skeleton | complete | `parler/__init__.py`, `errors.py`, `models.py`, `config.py`, `util/`, `rendering/`, `pipeline/` exist |
 | Config loading | complete | TOML, JSON, YAML via `PyYAML`, env override, CLI override, validation, secret scrubbing |
 | Canonical models | complete | frozen dataclasses with compatibility defaults for current tests |
-| Rendering surface | partial | Markdown/HTML/JSON implemented; enough for current rendering tests |
+| Rendering surface | complete | canonical Markdown/HTML/JSON reports render from `DecisionLog` with self-contained HTML and quote sections |
 | Orchestrator surface | partial | state machine, checkpoint save/load, cost gate, callbacks, and soft-fail attribution behavior implemented |
 | Audio ingestion + retry | complete | `parler/audio/*`, `parler/util.retry`, and `parler/utils.retry` shim are implemented and test-backed |
 | Transcription + quality + transcript cache | complete | `parler/transcription/*` is implemented and test-backed; `parler/extraction/cache.py` exists for cache-contract support |
-| Extraction parser + resolver + adapter | complete with one localized test drift | `parler/extraction/{deadline_resolver,parser,extractor}.py` and `parler/prompts/extraction.py` are implemented and integration-tested |
+| Extraction parser + resolver + adapter | complete | `parler/extraction/{deadline_resolver,parser,extractor}.py` and `parler/prompts/extraction.py` are implemented and integration-tested |
 | Packaging / release automation | complete | `uv.lock`, CLI entry points, CI workflow, publish workflow, wheel/sdist smoke tests |
 | Attribution | complete | `parler/attribution/*`, `parler/prompts/attribution.py`, and `parler.transcription.attributor` shim are implemented and test-backed |
-| Exports | not started | later phases still need real implementations |
-| Formal verification | complete for implemented slice | validated with `uv run pytest`, `ruff`, `mypy`, `uv build`, and isolated smoke installs |
+| Exports | complete | `parler/export/{notion,linear,jira,slack,result}.py` exist and are integration-tested |
+| Formal verification | complete for implemented slice | validated with `uv run pytest`, `ruff`, `mypy`, `uv build`, and smoke execution; current Phase 1-6 slice is green |
 
 </implementation_status>
 
@@ -98,7 +98,7 @@ parler/
 
 <commands>
 
-Commands marked `Phase 6+` assume later domain modules exist. Phase 1 through Phase 5 files are present now.
+Commands marked `Phase 7+` assume later domain modules exist. Phase 1 through Phase 6 files are present now.
 
 | Task | Command | Phase | Notes |
 |---|---|---|---|
@@ -106,8 +106,8 @@ Commands marked `Phase 6+` assume later domain modules exist. Phase 1 through Ph
 | Sync dev env | `uv sync --locked --group dev` | now | installs editable package and pinned dev toolchain |
 | Focused unit slice | `uv run pytest tests/unit/test_config_loading.py -q` | now | Phase 1 anchor |
 | Focused extraction core | `uv run pytest tests/unit/test_decision_extraction_parsing.py tests/property/test_parsing_properties.py tests/integration/test_mistral_extraction.py -q` | now | green on current implementation |
-| Focused Phase 1-5 slice | `uv run pytest tests/unit/test_config_loading.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/unit/test_decision_extraction_parsing.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py tests/integration/test_mistral_extraction.py tests/property/test_parsing_properties.py -q` | now | green on current implementation |
-| Deadline resolver suite | `uv run pytest tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/property/test_deadline_resolver_properties.py -q` | now | only three red assertions remain due a stale weekday assumption in tests |
+| Focused Phase 1-6 slice | `uv run pytest tests/unit/test_config_loading.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q` | now | green on current implementation |
+| Deadline resolver suite | `uv run pytest tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/property/test_deadline_resolver_properties.py -q` | now | green after reconciling the stale weekday assertions |
 | Smoke test editable install | `uv run python tests/smoke_test.py` | now | exercises import surface and CLI help |
 | Fast verification | `uv run pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 6+ | widen only as later domains land |
 | E2E | `uv run pytest tests/e2e -v -s -m slow` | Phase 8 | requires `MISTRAL_API_KEY`, generated fixtures, and installed test deps [verify] |
@@ -229,11 +229,11 @@ Commands marked `Phase 6+` assume later domain modules exist. Phase 1 through Ph
 | Symptom | Cause | Fix |
 |---|---|---|
 | Most segments resolve to `Unknown` | opaque diarization labels had no participant hints or transcript cues | pass `--participants`, keep upstream speaker labels when available, or accept the conservative fallback |
-| Deadline tests disagree on `2026-04-09` weekday semantics | stale assertions in `tests/unit/test_deadline_resolution.py` and one parametrized edge case assume the wrong weekday | follow the broader calendar-consistent suite, then reconcile the stale tests deliberately |
+| `ruff check tests/` reports many issues outside CI scope | benchmark/E2E/integration test backlog predates the implemented verification slice | keep CI/fast verification on `parler` + `tests/smoke_test.py` until you deliberately widen test lint scope |
 | `ModuleNotFoundError: parler.utils.retry` | tests import `utils`, design docs say `util` | expose `parler/utils/` shim or normalize references in one coordinated pass |
 | `ConfigError: api_key` or CLI exit code `3` | `MISTRAL_API_KEY` / `PARLER_API_KEY` missing | set one env var; never hardcode the key |
 | E2E fixture audio or transcript JSON missing | only the decision-log fixture is committed today | generate synthetic fixtures per `tests/fixtures/README.md` or skip E2E |
-| Export adapters missing | extraction now returns canonical logs, but later export/report surfaces are still incomplete | build Phase 6 from `DecisionLog`, not from raw extraction payloads |
+| Export side effect failed after local render succeeded | remote Notion/Linear/Jira/Slack call failed but local report generation should still succeed | preserve local outputs, inspect `ExportResult.error`, and retry the adapter independently |
 
   </known_issues>
 
@@ -264,6 +264,7 @@ Commands marked `Phase 6+` assume later domain modules exist. Phase 1 through Ph
   - `vertical-slice-implementation.md`: extend `parler/` in narrow, test-backed phases
   - `test-driven-delivery.md`: use the layered pytest/BDD/property/benchmark strategy correctly
   - `mistral-pipeline.md`: implement Voxtral/Mistral adapters, caches, quality gates, and parser normalization
+  - `rendering-and-export.md`: implement canonical reports and isolated Notion/Linear/Jira/Slack adapters
   - `orchestrator-and-cli.md`: implement `ProcessingState`, checkpoint/resume, cost gating, and CLI commands
 
   Start with `_index.md` when you do not know which skill to load.
@@ -276,12 +277,13 @@ Commands marked `Phase 6+` assume later domain modules exist. Phase 1 through Ph
     - `2026-04-09`: diarization is hybrid and ordered as vendor diarization -> existing upstream IDs -> text-only fallback.
     - `2026-04-09`: transcription and extraction caches must use semantic fingerprints, not weak content-hash shortcuts.
     - `2026-04-09`: the repository is intentionally spec/test-first; grow `parler/` via vertical slices, not a full scaffold dump.
-    - `2026-04-09`: Phase 1 through Phase 5 are implemented with a compatibility-oriented baseline; later phases should extend them rather than replacing them wholesale.
+    - `2026-04-09`: Phase 1 through Phase 6 are implemented with a compatibility-oriented baseline; later phases should extend them rather than replacing them wholesale.
     - `2026-04-09`: speaker attribution is conservative by design: prefer human-readable upstream labels, resolve opaque diarization IDs with participant hints and transcript cues, and fall back to `Unknown` instead of hallucinating names.
     - `2026-04-09`: extraction is now a real runtime stage: parser normalization and deadline resolution are local product logic, while the Mistral adapter is limited to JSON-mode request/response handling.
-    - `2026-04-09`: the deadline resolver follows the calendar-consistent interpretation from the parametrized/property suites; three older unit assertions still need explicit contract reconciliation.
+    - `2026-04-09`: the deadline resolver follows the calendar-consistent interpretation from the parametrized/property suites, and the stale weekday assertions were reconciled to that contract.
     - `2026-04-09`: the transcription adapter uses a local compatibility layer for SDK drift (`mistralai.client.*` vs older `MistralClient` / `APIStatusError` expectations); preserve that seam until the test and SDK contracts converge.
     - `2026-04-09`: packaging, locking, build, and publishing are standardized on `uv` / `uv_build`; avoid mixing `pip`, Hatch, Poetry, or ad hoc release commands.
+    - `2026-04-09`: report rendering and export adapters are separate concerns: renderer logic owns canonical local artifacts, and exporter failures must degrade to `ExportResult` errors without invalidating local output.
   </project_decisions>
 
   <lessons_learned>
