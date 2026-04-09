@@ -71,7 +71,7 @@
 </state_machine>
 
 <parallel_execution>
-  Safe to parallelize after Phase 1-6 local foundations are stable:
+  Safe to parallelize after Phase 1-7 local foundations are stable:
   - `parler/audio/*` vs `parler/rendering/*`
     - `parler/attribution/*` vs `parler/extraction/*`
   - `parler/export/*` adapters in separate files

@@ -2,7 +2,7 @@
 
 > Multilingual voice intelligence built on Voxtral. Decision logs from French/English meetings and earnings calls.
 
-**Status: Alpha.** Phase 1 through Phase 6 are implemented: typed models, config loading, rendering, orchestration baseline, audio ingestion, retry utilities, Voxtral transcription, transcript quality evaluation, semantic caching, speaker attribution heuristics, decision extraction, export adapters, and `uv`-based packaging/publishing. Remaining roadmap work is centered on the broader Phase 7 CLI/orchestrator hardening, fixture-complete E2E coverage, and later polish.
+**Status: Alpha.** Phase 1 through Phase 7 core surfaces are implemented: typed models, config loading, rendering, orchestration/state handling, audio ingestion, retry utilities, Voxtral transcription, transcript quality evaluation, semantic caching, speaker attribution heuristics, decision extraction, export adapters, canonical CLI commands, and `uv`-based packaging/publishing. Remaining roadmap work is centered on Phase 8 full-system verification, fixture-complete E2E coverage, and later polish.
 
 The canonical sources of truth are:
 
@@ -81,10 +81,14 @@ uv run parler config validate --config parler.toml
 
 # Inspect the CLI
 uv run parler --help
+uv run parler transcribe meeting.mp3 --format json
+uv run parler report --from-state .parler-state.json --format html
+uv run parler cache list
 
 # Run the implemented test-backed slice
 uv run pytest \
   tests/unit/test_config_loading.py \
+  tests/unit/test_cli_commands.py \
   tests/unit/test_report_rendering.py \
   tests/unit/test_pipeline_orchestration.py \
   tests/unit/test_audio_ingestion.py \
@@ -106,7 +110,7 @@ uv run pytest \
 uv build
 ```
 
-Decision extraction, canonical Markdown/HTML/JSON rendering, and isolated Notion/Linear/Jira/Slack export adapters are now implemented and test-backed. `parler process ...` is wired through the real CLI and orchestration path through render generation; the next major roadmap focus is broader CLI/export wiring and fully provisioned E2E fixtures.
+Decision extraction, canonical Markdown/HTML/JSON rendering, isolated Notion/Linear/Jira/Slack export adapters, checkpoint loading, and the canonical `process` / `transcribe` / `extract --from-state` / `report --from-state` / `cache` CLI commands are now implemented and test-backed. The next major roadmap focus is Phase 8 full-system verification with provisioned E2E fixtures and benchmark baselines.
 
 ## Design
 

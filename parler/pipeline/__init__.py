@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import ParlerConfig
-from .orchestrator import PipelineOrchestrator, PipelineStage, ProcessingState
+from .orchestrator import PipelineOrchestrator
+from .state import PipelineStage, ProcessingState
 
 PipelineConfig = ParlerConfig
 

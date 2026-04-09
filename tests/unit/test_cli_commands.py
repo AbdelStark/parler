@@ -1,0 +1,293 @@
+"""Focused CLI tests for the Phase 7 command surface."""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+from unittest.mock import patch
+
+from click.testing import CliRunner
+from parler.cli import cli
+from parler.config import CacheConfig, OutputConfig, ParlerConfig
+from parler.models import (
+    AudioFile,
+    Commitment,
+    CommitmentDeadline,
+    Decision,
+    DecisionLog,
+    ExtractionMetadata,
+    Transcript,
+    TranscriptSegment,
+)
+from parler.pipeline.state import ProcessingState, save_processing_state
+
+
+def make_audio_file(path: str = "/tmp/meeting.mp3") -> AudioFile:
+    return AudioFile(
+        path=Path(path),
+        original_path=None,
+        format="mp3",
+        duration_s=600.0,
+        sample_rate=44100,
+        channels=2,
+        size_bytes=10_000_000,
+        content_hash="abc123abc123",
+    )
+
+
+def make_transcript() -> Transcript:
+    segment = TranscriptSegment(
+        id=0,
+        start_s=0.0,
+        end_s=5.0,
+        text="Bonjour.",
+        language="fr",
+        speaker_id=None,
+        speaker_confidence=None,
+        confidence=0.9,
+        no_speech_prob=0.01,
+        code_switch=False,
+        words=None,
+    )
+    return Transcript(
+        text="Bonjour.",
+        language="fr",
+        duration_s=5.0,
+        segments=(segment,),
+    )
+
+
+def make_decision_log() -> DecisionLog:
+    return DecisionLog(
+        decisions=(
+            Decision(
+                id="D1",
+                summary="Launch date set to May 15",
+                timestamp_s=42.0,
+                speaker="Pierre",
+                confirmed_by=("Sophie",),
+                quote="On part sur le 15 mai.",
+                confidence="high",
+                language="fr",
+            ),
+        ),
+        commitments=(
+            Commitment(
+                id="C1",
+                owner="Sophie",
+                action="Review deployment checklist",
+                deadline=CommitmentDeadline(
+                    raw="vendredi prochain",
+                    resolved_date=date(2026, 4, 17),
+                    is_explicit=False,
+                ),
+                timestamp_s=82.0,
+                quote="Je vais revoir la checklist.",
+                confidence="high",
+                language="fr",
+            ),
+        ),
+        rejected=(),
+        open_questions=(),
+        metadata=ExtractionMetadata(
+            model="mistral-large-latest",
+            prompt_version="v1.2.0",
+            meeting_date=date(2026, 4, 9),
+            extracted_at="2026-04-09T10:30:00Z",
+            input_tokens=512,
+            output_tokens=128,
+        ),
+    )
+
+
+def make_state(
+    *,
+    transcript: Transcript | None = None,
+    decision_log: DecisionLog | None = None,
+    report: str | None = None,
+) -> ProcessingState:
+    return ProcessingState(
+        audio_file=make_audio_file(),
+        transcript=transcript,
+        attributed_transcript=None,
+        decision_log=decision_log,
+        report=report,
+        completed_stages=frozenset(),
+        checkpoint_path=None,
+    )
+
+
+def make_config(
+    *,
+    cache_dir: Path | None = None,
+    output_format: str = "markdown",
+    output_path: Path | None = None,
+) -> ParlerConfig:
+    return ParlerConfig(
+        api_key="test-api-key",
+        cache=CacheConfig(directory=cache_dir or Path(".parler-cache")),
+        output=OutputConfig(format=output_format, output_path=output_path),
+    )
+
+
+class TestProcessCommand:
+    def test_process_writes_default_markdown_output_file(self) -> None:
+        runner = CliRunner()
+        state = make_state(decision_log=make_decision_log(), report="# Decision Log\n")
+
+        with runner.isolated_filesystem():
+            with (
+                patch("parler.cli.load_config", return_value=make_config()),
+                patch("parler.cli.PipelineOrchestrator") as mock_orchestrator,
+            ):
+                mock_orchestrator.return_value.run.return_value = state
+                result = runner.invoke(cli, ["process", "meeting.mp3"])
+
+            assert result.exit_code == 0
+            output_path = Path("meeting-decisions.md")
+            assert output_path.exists()
+            assert "# Decision Log" in output_path.read_text(encoding="utf-8")
+
+    def test_process_infers_html_format_from_output_extension(self) -> None:
+        runner = CliRunner()
+        captured_overrides: dict[str, object] = {}
+
+        def fake_load_config(
+            *, config_path: Path | None = None, overrides: dict[str, object] | None = None
+        ) -> ParlerConfig:
+            del config_path
+            captured_overrides.update(overrides or {})
+            return make_config(
+                output_format=str(captured_overrides.get("output.format", "markdown")),
+                output_path=Path(str(captured_overrides["output.output_path"])),
+            )
+
+        with runner.isolated_filesystem():
+            with (
+                patch("parler.cli.load_config", side_effect=fake_load_config),
+                patch("parler.cli.PipelineOrchestrator") as mock_orchestrator,
+            ):
+                mock_orchestrator.return_value.run.return_value = make_state(
+                    decision_log=make_decision_log(),
+                    report="<html></html>",
+                )
+                result = runner.invoke(
+                    cli,
+                    ["process", "meeting.mp3", "--output", "custom-report.html"],
+                )
+
+            assert result.exit_code == 0
+            assert captured_overrides["output.format"] == "html"
+
+    def test_process_cost_estimate_skips_pipeline_execution(self) -> None:
+        runner = CliRunner()
+
+        with (
+            patch("parler.cli.load_config", return_value=make_config()),
+            patch("parler.cli.AudioIngester") as mock_ingester,
+            patch("parler.cli.estimate_cost", return_value=1.23),
+            patch("parler.cli.PipelineOrchestrator") as mock_orchestrator,
+        ):
+            mock_ingester.return_value.ingest.return_value = make_audio_file()
+            result = runner.invoke(cli, ["process", "meeting.mp3", "--cost-estimate"])
+
+        assert result.exit_code == 0
+        assert "1.23" in result.output
+        mock_orchestrator.assert_not_called()
+
+
+class TestTranscribeCommand:
+    def test_transcribe_json_output_contains_transcript_not_decisions(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        output_path = tmp_path / "transcript.json"
+        state = make_state(transcript=make_transcript())
+
+        with (
+            patch("parler.cli.load_config", return_value=make_config()),
+            patch("parler.cli.PipelineOrchestrator") as mock_orchestrator,
+        ):
+            mock_orchestrator.return_value.run.return_value = state
+            result = runner.invoke(
+                cli,
+                ["transcribe", "meeting.mp3", "--output", str(output_path), "--format", "json"],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["text"] == "Bonjour."
+        assert "decisions" not in payload
+
+
+class TestExtractAndReportCommands:
+    def test_extract_from_state_updates_checkpoint_and_prints_json(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        save_processing_state(state_path, make_state(transcript=make_transcript()))
+
+        with (
+            patch("parler.cli.load_config", return_value=make_config()),
+            patch("parler.cli.DecisionExtractor") as mock_extractor,
+        ):
+            mock_extractor.return_value.extract.return_value = make_decision_log()
+            result = runner.invoke(
+                cli, ["extract", "--from-state", str(state_path), "--format", "json"]
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["decisions"][0]["id"] == "D1"
+
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "decision_log" in saved_state
+
+    def test_report_from_state_renders_html_without_pipeline(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        output_path = tmp_path / "report.html"
+        save_processing_state(state_path, make_state(decision_log=make_decision_log()))
+
+        with patch("parler.cli.PipelineOrchestrator") as mock_orchestrator:
+            result = runner.invoke(
+                cli,
+                [
+                    "report",
+                    "--from-state",
+                    str(state_path),
+                    "--format",
+                    "html",
+                    "--output",
+                    str(output_path),
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "<html" in output_path.read_text(encoding="utf-8")
+        mock_orchestrator.assert_not_called()
+
+
+class TestCacheCommands:
+    def test_cache_list_show_and_clear(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        cache_dir = tmp_path / ".parler-cache"
+        cache_dir.mkdir()
+        first = cache_dir / "abc123.json"
+        second = cache_dir / "def456.json"
+        first.write_text('{"kind":"transcript"}', encoding="utf-8")
+        second.write_text('{"kind":"decision_log"}', encoding="utf-8")
+        config = make_config(cache_dir=cache_dir)
+
+        with patch("parler.cli.load_config", return_value=config):
+            list_result = runner.invoke(cli, ["cache", "list"])
+            show_result = runner.invoke(cli, ["cache", "show", "abc123"])
+            clear_result = runner.invoke(cli, ["cache", "clear", "--yes"])
+
+        assert list_result.exit_code == 0
+        assert "abc123" in list_result.output
+        assert "def456" in list_result.output
+
+        assert show_result.exit_code == 0
+        assert '"kind":"transcript"' in show_result.output
+
+        assert clear_result.exit_code == 0
+        assert not any(cache_dir.glob("*.json"))

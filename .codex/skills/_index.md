@@ -35,10 +35,10 @@ Lower-priority recommended skills not scaffolded yet:
 
 ## Known Baseline Risks
 
-- Phase 1 through Phase 6 exist in the runtime package. The main remaining later domain is broader CLI/export wiring and fixture-backed E2E coverage built on top of the canonical `DecisionLog`.
+- Phase 1 through Phase 7 core surfaces exist in the runtime package. The main remaining later domains are fixture-backed E2E coverage, benchmark baselines, and any CLI/export edge-case wiring uncovered by those higher-level runs.
 - E2E fixture assets listed in `tests/fixtures/README.md` are not committed yet.
 - Tests and docs still drift on module names: `assembly` vs `assembler` and `util` vs `utils`; `attribution` vs `transcription.attributor` is now covered by a compatibility shim.
 - `ruff check tests/` still surfaces a wider backlog in untouched benchmark/E2E/integration files; current CI/fast verification intentionally stays scoped to `parler` plus `tests/smoke_test.py`.
 - `PipelineConfig` compatibility is currently provided by aliasing `ParlerConfig`.
 - `uv`, `uv_build`, `PyYAML`, and `requests` are now declared and validated; keep future tooling changes inside the same packaging model.
-- The implemented Phase 1-6 slice is green locally; widen CI deliberately rather than pointing it at the whole `tests/` tree.
+- The implemented Phase 1-7 slice is green locally; widen CI deliberately rather than pointing it at the whole `tests/` tree.
