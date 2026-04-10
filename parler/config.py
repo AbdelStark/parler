@@ -110,7 +110,7 @@ class AttributionConfig:
 
 @dataclass(frozen=True)
 class ExtractionConfig:
-    model: str = "mistral-large-latest"
+    model: str = "mistral-medium-latest"
     temperature: float = 0.0
     max_tokens: int = 4096
     prompt_version: str = "v1.0"

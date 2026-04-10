@@ -12,7 +12,7 @@ from click.testing import CliRunner
 from parler.cli import cli
 from parler.tui import FIXTURE_PRESETS, ParlerTUIApp, PipelineRequest, build_tui_config
 from textual.containers import Grid, Horizontal
-from textual.widgets import Input, Select, Static
+from textual.widgets import Button, Input, Select, Static, Switch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,6 +56,24 @@ class TestBuildTuiConfig:
 
 @pytest.mark.asyncio
 class TestParlerTuiApp:
+    async def test_startup_preloads_default_synthetic_french_showcase(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-api-key")
+        app = ParlerTUIApp(project_root=REPO_ROOT)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            assert app.query_one("#input-path", Input).value == str(FIXTURE_PRESETS["fr"].path)
+            assert app.query_one("#languages-input", Input).value == "fr"
+            assert app.query_one("#participants-input", Input).value == "Pierre, Sophie"
+            assert app.query_one("#voxpopuli-select", Select).value == "voxpopuli_01"
+            assert app.query_one("#transcribe-only-switch", Switch).value is False
+            assert "Ready to run." in str(app.query_one("#run-summary", Static).render())
+            assert app.focused is app.query_one("#run-button", Button)
+
     async def test_fixture_action_populates_showcase_fields(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -78,6 +96,28 @@ class TestParlerTuiApp:
                 assert app.query_one("#languages-input", Input).value == "fr"
                 assert app.query_one("#participants-input", Input).value == "Pierre, Sophie"
                 assert app.query_one("#output-format-select", Select).value == "markdown"
+                assert app.query_one("#transcribe-only-switch", Switch).value is False
+
+    async def test_selected_voxpopuli_clip_populates_showcase_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-api-key")
+        app = ParlerTUIApp(project_root=REPO_ROOT)
+
+        async with app.run_test() as pilot:
+            app.query_one("#voxpopuli-select", Select).value = "voxpopuli_03"
+            app.action_load_selected_voxpopuli_demo()
+            await pilot.pause()
+
+            assert app.query_one("#input-path", Input).value == str(
+                FIXTURE_PRESETS["voxpopuli_03"].path
+            )
+            assert (
+                app.query_one("#meeting-date", Input).value
+                == FIXTURE_PRESETS["voxpopuli_03"].meeting_date.isoformat()
+            )
+            assert app.query_one("#transcribe-only-switch", Switch).value is True
 
     async def test_layout_switches_to_stack_mode_for_medium_terminal(
         self,

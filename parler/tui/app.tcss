@@ -131,6 +131,14 @@ Button {
     color: #f4efe7;
 }
 
+#fixture-help {
+    margin: 0 0 1 0;
+    padding: 1;
+    background: #132038;
+    color: #c6d7f3;
+    border: round #274164;
+}
+
 .metric-card {
     margin: 0 0 1 0;
     padding: 1 2;

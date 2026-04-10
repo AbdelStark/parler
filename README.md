@@ -57,6 +57,11 @@ Launch the TUI:
 uv run parler tui
 ```
 
+The TUI boots with `tests/fixtures/audio/fr_meeting_5min.mp3` preloaded so a
+full French decision-extraction run works immediately, while the five committed
+VoxPopuli FR clips remain selectable from the left rail for real-audio
+transcription demos.
+
 Run the local live-E2E helper:
 
 ```bash

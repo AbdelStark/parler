@@ -105,6 +105,11 @@ For local experimentation, the repo now keeps five deterministic 2-minute clips:
 See `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clips.md` for the exact
 start/end offsets and provenance notes.
 
+The Textual TUI (`uv run parler tui`) boots with the synthetic
+`fr_meeting_5min.mp3` showcase preloaded by default so the full decision
+pipeline works immediately. The five committed VoxPopuli FR clips remain
+available as one-click real-audio transcription demos.
+
 ## Content of `fr_meeting_5min`
 
 A short French meeting about a product launch:

@@ -122,7 +122,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | Deadline resolver suite | `uv run pytest tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/property/test_deadline_resolver_properties.py -q` | now | green after reconciling the stale weekday assertions |
 | Generate synthetic fixtures | `uv run python tests/fixtures/generate_fixtures.py --all` | Phase 8 | audio generation needs `gtts` or `say`/`espeak` plus `ffmpeg`; silence fixture works with stdlib only |
 | Local E2E runner | `uv run parler-e2e` | Phase 8 | loads `.env`, verifies `ffprobe`, auto-generates missing fixtures, and defaults extraction to `mistral-medium-latest` |
-| Launch TUI | `uv run parler tui` | now | Textual cockpit with fixture presets, stage progress, results, and artifact browsing |
+| Launch TUI | `uv run parler tui` | now | Textual cockpit with fixture presets, stage progress, results, and artifact browsing; boots with the synthetic French meeting preloaded for a true E2E showcase, with VoxPopuli FR clips one click away |
 | Local readiness check | `uv run parler doctor` | now | verifies API key source, config readability, writable local artifact dirs, FFmpeg presence, and temp-audio backlog |
 | Inspect run traces | `uv run parler runs list && uv run parler runs show <trace_id>` | now | local `.parler-runs/` summaries for `process`, `transcribe`, and TUI runs |
 | Prune stale local artifacts | `uv run parler cleanup --older-than-days 7` | now | removes old `.parler-runs/` bundles and normalized temp audio |

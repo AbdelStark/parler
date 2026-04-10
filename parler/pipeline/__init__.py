@@ -51,7 +51,10 @@ class PipelineConfig:
     transcription_timeout_s: int = 300
     transcription_max_retries: int = 3
     extraction_model: str = field(
-        default_factory=lambda: _env_default("PARLER_E2E_EXTRACTION_MODEL", "mistral-large-latest")
+        default_factory=lambda: _env_default(
+            "PARLER_E2E_EXTRACTION_MODEL",
+            "mistral-medium-latest",
+        )
     )
     extraction_temperature: float = 0.0
     extraction_max_tokens: int = 4096

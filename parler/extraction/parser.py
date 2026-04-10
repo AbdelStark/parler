@@ -392,7 +392,7 @@ def parse_extraction_response(
     response: object,
     *,
     meeting_date: date | None,
-    model: str = "mistral-large-latest",
+    model: str = "mistral-medium-latest",
     prompt_version: str = "v1.0",
     extracted_at: str | None = None,
     input_tokens: int = 0,

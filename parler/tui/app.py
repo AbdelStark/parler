@@ -100,15 +100,63 @@ class FixturePreset:
     participants: tuple[str, ...]
     meeting_date: date
     output_format: str = "markdown"
+    transcribe_only: bool = False
+    summary: str = ""
 
 
 FIXTURE_PRESETS: dict[str, FixturePreset] = {
+    "voxpopuli_01": FixturePreset(
+        name="VoxPopuli FR · Clip 01",
+        path=Path("tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_01.mp3"),
+        languages=("fr",),
+        participants=(),
+        meeting_date=date(2020, 5, 27),
+        transcribe_only=True,
+        summary="Real VoxPopuli French plenary audio. Best for an instant transcription demo.",
+    ),
+    "voxpopuli_02": FixturePreset(
+        name="VoxPopuli FR · Clip 02",
+        path=Path("tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_02.mp3"),
+        languages=("fr",),
+        participants=(),
+        meeting_date=date(2020, 5, 27),
+        transcribe_only=True,
+        summary="Real VoxPopuli French plenary audio. Use this when you want a different 2-minute FR sample.",
+    ),
+    "voxpopuli_03": FixturePreset(
+        name="VoxPopuli FR · Clip 03",
+        path=Path("tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_03.mp3"),
+        languages=("fr",),
+        participants=(),
+        meeting_date=date(2020, 5, 27),
+        transcribe_only=True,
+        summary="Real VoxPopuli French plenary audio. Good for repeating the live transcription path on a different clip.",
+    ),
+    "voxpopuli_04": FixturePreset(
+        name="VoxPopuli FR · Clip 04",
+        path=Path("tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_04.mp3"),
+        languages=("fr",),
+        participants=(),
+        meeting_date=date(2020, 5, 27),
+        transcribe_only=True,
+        summary="Real VoxPopuli French plenary audio. Another short FR clip for quick operator demos.",
+    ),
+    "voxpopuli_05": FixturePreset(
+        name="VoxPopuli FR · Clip 05",
+        path=Path("tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_05.mp3"),
+        languages=("fr",),
+        participants=(),
+        meeting_date=date(2020, 5, 27),
+        transcribe_only=True,
+        summary="Real VoxPopuli French plenary audio. Useful for cycling through multiple public FR samples in the TUI.",
+    ),
     "fr": FixturePreset(
         name="French launch demo",
         path=Path("tests/fixtures/audio/fr_meeting_5min.mp3"),
         languages=("fr",),
         participants=("Pierre", "Sophie"),
         meeting_date=date(2026, 4, 9),
+        summary="Synthetic French meeting fixture with explicit launch decisions and commitments.",
     ),
     "bilingual": FixturePreset(
         name="Bilingual startup demo",
@@ -116,6 +164,7 @@ FIXTURE_PRESETS: dict[str, FixturePreset] = {
         languages=("fr", "en"),
         participants=("Pierre", "Alice"),
         meeting_date=date(2026, 4, 9),
+        summary="Synthetic mixed French-English startup discussion with code switching and one explicit decision.",
     ),
     "earnings": FixturePreset(
         name="Earnings-call stress demo",
@@ -123,8 +172,15 @@ FIXTURE_PRESETS: dict[str, FixturePreset] = {
         languages=("en", "fr"),
         participants=("Pierre", "Sophie", "Analyst"),
         meeting_date=date(2026, 4, 9),
+        summary="Synthetic long-form stress fixture with repeated investor-relations patterns and multiple commitments.",
     ),
 }
+
+DEFAULT_STARTUP_FIXTURE = "fr"
+VOXPOPULI_FIXTURE_KEYS = tuple(key for key in FIXTURE_PRESETS if key.startswith("voxpopuli_"))
+VOXPOPULI_FIXTURE_OPTIONS = tuple(
+    (FIXTURE_PRESETS[key].name, key) for key in VOXPOPULI_FIXTURE_KEYS
+)
 
 
 def _split_csv(value: str) -> list[str]:
@@ -289,15 +345,42 @@ class ParlerTUIApp(App[None]):
                     yield Button("Refresh cache", id="refresh-cache-button", variant="success")
                     yield Button("Clear form", id="clear-form-button", variant="warning")
                 with Vertical(id="fixture-cluster"):
-                    yield Label("Showcase", classes="cluster-title")
-                    yield Button("French launch", id="fixture-fr-button", classes="fixture-button")
+                    yield Label("Instant demo", classes="cluster-title")
                     yield Button(
-                        "Bilingual startup",
+                        "Reload FR showcase",
+                        id="fixture-fr-default-button",
+                        classes="fixture-button",
+                    )
+                    yield Label("VoxPopuli FR samples", classes="cluster-title")
+                    yield Select(
+                        VOXPOPULI_FIXTURE_OPTIONS,
+                        value=VOXPOPULI_FIXTURE_KEYS[0],
+                        allow_blank=False,
+                        id="voxpopuli-select",
+                    )
+                    yield Button(
+                        "Load selected VoxPopuli clip",
+                        id="fixture-vox-load-button",
+                        classes="fixture-button",
+                    )
+                    yield Static(
+                        "The synthetic French meeting is preloaded on startup for a true end-to-end showcase. "
+                        "Use the VoxPopuli clips below when you want a real French transcription demo.",
+                        id="fixture-help",
+                    )
+                    yield Label("Synthetic demos", classes="cluster-title")
+                    yield Button(
+                        "Synthetic FR meeting",
+                        id="fixture-fr-button",
+                        classes="fixture-button",
+                    )
+                    yield Button(
+                        "Synthetic bilingual",
                         id="fixture-bilingual-button",
                         classes="fixture-button",
                     )
                     yield Button(
-                        "Earnings stress",
+                        "Synthetic earnings",
                         id="fixture-earnings-button",
                         classes="fixture-button",
                     )
@@ -517,7 +600,8 @@ class ParlerTUIApp(App[None]):
         self._refresh_metrics()
         self.refresh_cache_table()
         self._apply_responsive_layout(self.size.width)
-        self.query_one("#input-path", Input).focus()
+        self.load_fixture(DEFAULT_STARTUP_FIXTURE, announce=False, preview=False, switch_tab=False)
+        self.query_one("#run-button", Button).focus()
 
     def on_resize(self, event: Resize) -> None:
         self._apply_responsive_layout(event.size.width)
@@ -529,6 +613,16 @@ class ParlerTUIApp(App[None]):
         )
         yield SystemCommand(
             "Load checkpoint", "Load state from the checkpoint path", self.action_load_state
+        )
+        yield SystemCommand(
+            "Default showcase",
+            "Load the startup synthetic French end-to-end demo",
+            self.action_load_default_showcase_demo,
+        )
+        yield SystemCommand(
+            "VoxPopuli selected clip",
+            "Load the currently selected VoxPopuli French clip",
+            self.action_load_selected_voxpopuli_demo,
         )
         yield SystemCommand(
             "French demo", "Load the French fixture preset", self.action_load_french_demo
@@ -627,6 +721,15 @@ class ParlerTUIApp(App[None]):
     def action_load_french_demo(self) -> None:
         self.load_fixture("fr")
 
+    def action_load_default_showcase_demo(self) -> None:
+        self.load_fixture(DEFAULT_STARTUP_FIXTURE)
+
+    def action_load_selected_voxpopuli_demo(self) -> None:
+        selected = str(
+            self.query_one("#voxpopuli-select", Select).value or VOXPOPULI_FIXTURE_KEYS[0]
+        )
+        self.load_fixture(selected)
+
     def action_load_bilingual_demo(self) -> None:
         self.load_fixture("bilingual")
 
@@ -644,6 +747,10 @@ class ParlerTUIApp(App[None]):
             self.action_refresh_cache()
         elif button_id == "clear-form-button":
             self.clear_form()
+        elif button_id == "fixture-fr-default-button":
+            self.action_load_default_showcase_demo()
+        elif button_id == "fixture-vox-load-button":
+            self.action_load_selected_voxpopuli_demo()
         elif button_id == "fixture-fr-button":
             self.action_load_french_demo()
         elif button_id == "fixture-bilingual-button":
@@ -756,21 +863,54 @@ class ParlerTUIApp(App[None]):
             resume=self.query_one("#resume-switch", Switch).value,
         )
 
-    def load_fixture(self, fixture_key: str) -> None:
+    def load_fixture(
+        self,
+        fixture_key: str,
+        *,
+        announce: bool = True,
+        preview: bool = True,
+        switch_tab: bool = True,
+    ) -> None:
         preset = FIXTURE_PRESETS[fixture_key]
+        self.current_state = None
+        self.current_trace_id = None
+        self._run_recorder = None
         self.query_one("#input-path", Input).value = _display_path(preset.path, self.project_root)
         self.query_one("#meeting-date", Input).value = preset.meeting_date.isoformat()
         self.query_one("#languages-input", Input).value = ",".join(preset.languages)
         self.query_one("#participants-input", Input).value = ", ".join(preset.participants)
         self.query_one("#output-format-select", Select).value = preset.output_format
-        self.query_one("#transcribe-only-switch", Switch).value = False
+        self.query_one("#transcribe-only-switch", Switch).value = preset.transcribe_only
         self.query_one("#no-diarize-switch", Switch).value = False
         self.query_one("#anonymize-switch", Switch).value = False
         self.query_one("#resume-switch", Switch).value = False
-        self.preview_path((self.project_root / preset.path).resolve())
-        self._set_main_tab("studio-tab")
+        if fixture_key in VOXPOPULI_FIXTURE_KEYS:
+            self.query_one("#voxpopuli-select", Select).value = fixture_key
+        request = self.build_request()
+        self.current_request = request
+        self._reset_runtime(request)
+        self._refresh_metrics()
+        audio_label = preset.path.name
+        mode_label = "Transcription demo" if preset.transcribe_only else "Decision demo"
+        mode_detail = (
+            "Real VoxPopuli sample, ready to run immediately."
+            if fixture_key in VOXPOPULI_FIXTURE_KEYS
+            else preset.name
+        )
+        self._set_metric("#metric-mode", "Mode", mode_label, mode_detail)
+        self._set_metric("#metric-audio", "Audio", audio_label, preset.summary or "fixture loaded")
+        if preview:
+            self.preview_path((self.project_root / preset.path).resolve())
+        else:
+            self.query_one("#artifact-preview", Static).update(
+                f"{preset.name}\n{_display_path(preset.path, self.project_root)}\n\n"
+                f"{preset.summary or 'Fixture loaded and ready to run.'}"
+            )
+        if switch_tab:
+            self._set_main_tab("studio-tab")
         self._write_log(f"Loaded fixture preset: {preset.name}")
-        self.notify(f"{preset.name} loaded.", severity="information", timeout=1.5)
+        if announce:
+            self.notify(f"{preset.name} loaded.", severity="information", timeout=1.5)
 
     def clear_form(self) -> None:
         for widget_id in (
@@ -786,7 +926,10 @@ class ParlerTUIApp(App[None]):
         self.query_one("#no-diarize-switch", Switch).value = False
         self.query_one("#anonymize-switch", Switch).value = False
         self.query_one("#resume-switch", Switch).value = False
+        self.current_request = None
+        self.current_state = None
         self.current_trace_id = None
+        self._run_recorder = None
         self._reset_runtime()
         self._refresh_metrics()
         self.notify("Form cleared.", severity="information", timeout=1.5)
@@ -923,11 +1066,12 @@ class ParlerTUIApp(App[None]):
             "# parler 🇫🇷\n\n"
             "A Textual cockpit for the full parler workflow.\n\n"
             "## What this UI is for\n\n"
-            "- run the pipeline against local audio files or showcase fixtures\n"
+            "- run the pipeline against local audio files, synthetic fixtures, or real VoxPopuli FR clips\n"
             "- watch stage-by-stage progress in real time\n"
             "- inspect transcripts, decisions, commitments, questions, and rejected proposals\n"
             "- browse cache artifacts and project files without leaving the app\n"
             "- keep everything keyboard-driven via bindings and the command palette\n\n"
+            "The app boots with the synthetic French meeting preloaded so the full decision pipeline works immediately.\n\n"
             "## Quick keys\n\n"
             "- `Ctrl+R`: run pipeline\n"
             "- `Ctrl+O`: load checkpoint\n"
@@ -939,10 +1083,10 @@ class ParlerTUIApp(App[None]):
             "- `F5`: refresh cache\n"
             "- `Ctrl+P`: command palette\n\n"
             "## Showcase flow\n\n"
-            "1. Load a fixture from the left rail.\n"
+            "1. Start with the preloaded synthetic French meeting for the full pipeline, or switch to a VoxPopuli clip for real-audio transcription.\n"
             "2. Press `Ctrl+R`.\n"
             "3. Watch the stage strip and runtime log.\n"
-            "4. Review the report and structured tables in Results.\n"
+            "4. Review the transcript or structured output in Results.\n"
             "5. Use Artifacts to inspect cache entries and local files.\n"
         )
 
@@ -1040,20 +1184,31 @@ class ParlerTUIApp(App[None]):
                 self._set_stage(stage, "skipped", "Skipped")
         self.query_one("#stage-progress", ProgressBar).update(total=len(expected), progress=0)
         if request is not None:
-            participants = ", ".join(request.participants) or "none"
+            participants = ", ".join(request.participants) or "auto speaker labels"
             languages = ", ".join(request.languages) or "auto"
             trace_detail = f"\nTrace: {self.current_trace_id}" if self.current_trace_id else ""
+            mode = (
+                "Transcription-first demo" if request.transcribe_only else "Full decision pipeline"
+            )
+            next_step = (
+                "Press Run now for a live French transcript."
+                if request.transcribe_only
+                else "Press Run now for the full structured output pipeline."
+            )
             self.query_one("#run-summary", Static).update(
+                "Ready to run.\n"
                 f"{request.input_path.name}\n"
+                f"Mode: {mode}\n"
                 f"Languages: {languages}\n"
                 f"Participants: {participants}\n"
-                f"Format: {request.output_format}"
+                f"Format: {request.output_format}\n"
+                f"{next_step}"
                 f"{trace_detail}"
             )
         else:
             self.query_one("#run-summary", Static).update(
                 "Ready for a run.\n"
-                "Choose a fixture or point at your own audio.\n"
+                "Load a fixture or point at your own audio.\n"
                 "If API access is missing, add MISTRAL_API_KEY to .env."
             )
 

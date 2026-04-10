@@ -23,7 +23,7 @@ def build_extraction_cache_key(
     transcript_hash: str,
     prompt_version: str,
     *,
-    model: str = "mistral-large-latest",
+    model: str = "mistral-medium-latest",
     schema_version: str = "v1",
     meeting_date_anchor: str = "",
     extraction_policy_version: str = "v1",

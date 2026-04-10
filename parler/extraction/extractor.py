@@ -85,7 +85,7 @@ class DecisionExtractor:
         self,
         *,
         api_key: str,
-        model: str = "mistral-large-latest",
+        model: str = "mistral-medium-latest",
         prompt_version: str = DEFAULT_EXTRACTION_PROMPT_VERSION,
         temperature: float = 0.0,
         max_tokens: int = 4096,
