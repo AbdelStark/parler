@@ -21,6 +21,7 @@ def build_transcript_cache_key(
     preprocessing_fingerprint: str = "raw",
     context_bias_fingerprint: str = "",
     language_fingerprint: str | tuple[str, ...] = "auto",
+    normalization_version: str = "v2",
 ) -> str:
     return stable_fingerprint(
         "transcript",
@@ -32,6 +33,7 @@ def build_transcript_cache_key(
         preprocessing_fingerprint,
         context_bias_fingerprint,
         language_fingerprint,
+        normalization_version,
     )
 
 

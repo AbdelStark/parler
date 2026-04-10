@@ -112,6 +112,25 @@ class DecisionExtractor:
 
     def _passes(self, transcript: Transcript) -> list[str]:
         text = transcript.text.strip()
+        if len(transcript.segments) > 40:
+            window_size = 30
+            overlap = 5
+            windows: list[str] = []
+            start = 0
+            while start < len(transcript.segments):
+                end = min(len(transcript.segments), start + window_size)
+                window_text = " ".join(
+                    segment.text
+                    for segment in transcript.segments[start:end]
+                    if segment.text.strip()
+                ).strip()
+                if window_text:
+                    windows.append(window_text)
+                if end >= len(transcript.segments):
+                    break
+                start = max(end - overlap, start + 1)
+            if len(windows) > 1:
+                return windows
         if len(text) <= self.multi_pass_threshold:
             return [text]
         window = self.multi_pass_threshold
@@ -214,6 +233,8 @@ class DecisionExtractor:
                     input_tokens=_usage_token(response, "input_tokens", "prompt_tokens"),
                     output_tokens=_usage_token(response, "output_tokens", "completion_tokens"),
                     pass_count=1,
+                    default_language=transcript.language or "en",
+                    allowed_languages=transcript.detected_languages,
                 )
 
             return parse_extraction_response(
@@ -225,6 +246,8 @@ class DecisionExtractor:
                 input_tokens=_usage_token(response, "input_tokens", "prompt_tokens"),
                 output_tokens=_usage_token(response, "output_tokens", "completion_tokens"),
                 pass_count=1,
+                default_language=transcript.language or "en",
+                allowed_languages=transcript.detected_languages,
             )
 
         return parse_extraction_response(
@@ -234,6 +257,8 @@ class DecisionExtractor:
             prompt_version=self.prompt_version,
             extracted_at=extracted_at,
             pass_count=1,
+            default_language=transcript.language or "en",
+            allowed_languages=transcript.detected_languages,
         )
 
     def _decision_key(self, item: Decision) -> tuple[str, str, float | None]:

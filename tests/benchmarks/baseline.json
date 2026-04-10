@@ -1,0 +1,186 @@
+{
+  "benchmarks": [
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 61500,
+      "mean_ns": 42512,
+      "median_ns": 41625,
+      "min_ns": 37542,
+      "name": "test_bench_assemble_2_chunks",
+      "ops": 23522.5955,
+      "rounds": 1913
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 186625,
+      "mean_ns": 104439,
+      "median_ns": 102833,
+      "min_ns": 89833,
+      "name": "test_bench_assemble_5_chunks",
+      "ops": 9574.9285,
+      "rounds": 7862
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 253625,
+      "mean_ns": 7840,
+      "median_ns": 7542,
+      "min_ns": 6375,
+      "name": "test_bench_assemble_with_overlap_dedup",
+      "ops": 127552.6787,
+      "rounds": 46693
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 35750,
+      "mean_ns": 4152,
+      "median_ns": 4083,
+      "min_ns": 3458,
+      "name": "test_bench_parse_empty_response",
+      "ops": 240843.4247,
+      "rounds": 76434
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 240625,
+      "mean_ns": 106675,
+      "median_ns": 104625,
+      "min_ns": 93083,
+      "name": "test_bench_parse_large_response",
+      "ops": 9374.2761,
+      "rounds": 7730
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 516958,
+      "mean_ns": 33999,
+      "median_ns": 33250,
+      "min_ns": 29333,
+      "name": "test_bench_parse_small_response",
+      "ops": 29412.2174,
+      "rounds": 7193
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 216792,
+      "mean_ns": 73897,
+      "median_ns": 72375,
+      "min_ns": 63500,
+      "name": "test_bench_parse_with_deadline_resolution",
+      "ops": 13532.3353,
+      "rounds": 8731
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 571750,
+      "mean_ns": 85255,
+      "median_ns": 82417,
+      "min_ns": 71916,
+      "name": "test_bench_render_html",
+      "ops": 11729.5548,
+      "rounds": 6695
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 15029417,
+      "mean_ns": 355898,
+      "median_ns": 341666,
+      "min_ns": 294167,
+      "name": "test_bench_render_json",
+      "ops": 2809.7952,
+      "rounds": 2321
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 144458,
+      "mean_ns": 23543,
+      "median_ns": 22917,
+      "min_ns": 19708,
+      "name": "test_bench_render_markdown",
+      "ops": 42474.679,
+      "rounds": 3806
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 10458,
+      "mean_ns": 2897,
+      "median_ns": 2875,
+      "min_ns": 2417,
+      "name": "test_bench_resolve_english_relative",
+      "ops": 345175.8309,
+      "rounds": 2522
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 45084,
+      "mean_ns": 2361,
+      "median_ns": 2333,
+      "min_ns": 2000,
+      "name": "test_bench_resolve_explicit_date",
+      "ops": 423598.6337,
+      "rounds": 79999
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 70917,
+      "mean_ns": 3272,
+      "median_ns": 3208,
+      "min_ns": 2708,
+      "name": "test_bench_resolve_french_relative",
+      "ops": 305650.0399,
+      "rounds": 32389
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 43666,
+      "mean_ns": 2900,
+      "median_ns": 2833,
+      "min_ns": 2417,
+      "name": "test_bench_resolve_full_with_metadata",
+      "ops": 344847.2169,
+      "rounds": 70384
+    },
+    {
+      "group": null,
+      "iterations": 18,
+      "max_ns": 7113,
+      "mean_ns": 282,
+      "median_ns": 275,
+      "min_ns": 229,
+      "name": "test_bench_resolve_none_input",
+      "ops": 3547565.6426,
+      "rounds": 190482
+    },
+    {
+      "group": null,
+      "iterations": 1,
+      "max_ns": 34250,
+      "mean_ns": 2037,
+      "median_ns": 2000,
+      "min_ns": 1667,
+      "name": "test_bench_resolve_unresolvable",
+      "ops": 490983.4442,
+      "rounds": 118234
+    }
+  ],
+  "commit": "daa85ab0824f20ac8bac08f3c88e9d8c8b283381",
+  "generated_at": "2026-04-09T14:53:57.720804Z",
+  "machine": "arm64",
+  "python_version": "3.11.14",
+  "source": "pytest-benchmark summary",
+  "system": "Darwin"
+}

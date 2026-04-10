@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import replace
 from datetime import UTC, date, datetime
-from typing import Any, Final, Literal, cast
+from typing import Any, Literal, cast
 
 from ..models import (
     Commitment,
@@ -17,36 +17,12 @@ from ..models import (
     OpenQuestion,
     Rejection,
 )
+from ..util.language import detect_language, normalize_language_code
 from .deadline_resolver import resolve_deadline_full
 
 logger = logging.getLogger(__name__)
 
 Confidence = Literal["high", "medium"]
-
-_LANGUAGE_ALIASES: Final[dict[str, str]] = {
-    "arabic": "ar",
-    "de": "de",
-    "english": "en",
-    "en": "en",
-    "es": "es",
-    "french": "fr",
-    "fr": "fr",
-    "german": "de",
-    "it": "it",
-    "italian": "it",
-    "ja": "ja",
-    "japanese": "ja",
-    "ko": "ko",
-    "korean": "ko",
-    "nl": "nl",
-    "polish": "pl",
-    "pl": "pl",
-    "portuguese": "pt",
-    "pt": "pt",
-    "spanish": "es",
-    "zh": "zh",
-    "chinese": "zh",
-}
 
 
 def _timestamp() -> str:
@@ -114,6 +90,21 @@ def _clean_text(value: object) -> str:
     return str(value).strip()
 
 
+def _first_text(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        candidate = _clean_text(item.get(key))
+        if candidate:
+            return candidate
+    return ""
+
+
+def _meaningful_quote(item: dict[str, Any]) -> str:
+    quote = _clean_text(item.get("quote"))
+    if any(character.isalnum() for character in quote):
+        return quote
+    return ""
+
+
 def _normalize_confidence(value: object) -> Confidence | None:
     if isinstance(value, str):
         normalized = value.strip().lower()
@@ -126,15 +117,22 @@ def _normalize_confidence(value: object) -> Confidence | None:
     return "medium"
 
 
-def _normalize_language(value: object, default: str = "en") -> str:
-    normalized = _clean_text(value).lower()
-    if not normalized:
-        return default
-    if normalized in _LANGUAGE_ALIASES:
-        return _LANGUAGE_ALIASES[normalized]
-    if len(normalized) == 2 and normalized.isalpha():
+def _normalize_language(
+    value: object,
+    *,
+    default: str = "en",
+    fallback_text: str = "",
+    allowed_languages: tuple[str, ...] = (),
+) -> str:
+    normalized = normalize_language_code(value)
+    if normalized is not None:
         return normalized
-    return default
+    inferred = detect_language(
+        fallback_text,
+        candidates=allowed_languages,
+        default=default,
+    )
+    return inferred or default
 
 
 def _normalize_quote(value: object, *, warnings: list[str], item_label: str) -> str:
@@ -170,6 +168,21 @@ def _normalize_names(value: object) -> tuple[str, ...]:
         if candidate and candidate not in names:
             names.append(candidate)
     return tuple(names)
+
+
+def _coerce_deadline_dict(item: dict[str, Any]) -> dict[str, Any] | None:
+    deadline = item.get("deadline")
+    if isinstance(deadline, dict):
+        return deadline
+
+    raw_date = _first_text(item, "date", "due_date", "dueDate")
+    if not raw_date:
+        return None
+    return {
+        "raw": raw_date,
+        "resolved_date": raw_date,
+        "is_explicit": True,
+    }
 
 
 def _normalize_deadline(
@@ -208,21 +221,35 @@ def _parse_decision(
     item: dict[str, Any],
     *,
     warnings: list[str],
+    default_language: str,
+    allowed_languages: tuple[str, ...],
 ) -> Decision | None:
-    summary = _clean_text(item.get("summary"))
+    summary = _first_text(item, "summary", "outcome", "decision", "title") or _meaningful_quote(
+        item
+    )
     if not summary:
         return None
     confidence = _normalize_confidence(item.get("confidence"))
     if confidence is None:
         return None
-    language = _normalize_language(item.get("language"), default="en")
+    quote = _first_text(item, "quote", "excerpt", "outcome")
+    language = _normalize_language(
+        item.get("language"),
+        default=default_language,
+        fallback_text=quote or summary,
+        allowed_languages=allowed_languages,
+    )
     return Decision(
         id="D0",
         summary=summary,
-        timestamp_s=_normalize_timestamp(item.get("timestamp_s")),
-        speaker=_clean_text(item.get("speaker")) or None,
-        confirmed_by=_normalize_names(item.get("confirmed_by")),
-        quote=_normalize_quote(item.get("quote"), warnings=warnings, item_label="decision"),
+        timestamp_s=_normalize_timestamp(
+            item.get("timestamp_s")
+            if item.get("timestamp_s") is not None
+            else item.get("timestamp")
+        ),
+        speaker=_first_text(item, "speaker", "owner") or None,
+        confirmed_by=_normalize_names(item.get("confirmed_by") or item.get("approvers")),
+        quote=_normalize_quote(quote, warnings=warnings, item_label="decision"),
         confidence=confidence,
         language=language,
     )
@@ -233,24 +260,38 @@ def _parse_commitment(
     *,
     warnings: list[str],
     meeting_date: date | None,
+    default_language: str,
+    allowed_languages: tuple[str, ...],
 ) -> Commitment | None:
-    action = _clean_text(item.get("action"))
+    action = _first_text(item, "action", "outcome", "summary", "task") or _meaningful_quote(item)
     if not action:
         return None
     confidence = _normalize_confidence(item.get("confidence"))
     if confidence is None:
         return None
-    language = _normalize_language(item.get("language"), default="en")
-    owner = _clean_text(item.get("owner")) or "Unknown"
+    quote = _first_text(item, "quote", "excerpt", "outcome")
+    language = _normalize_language(
+        item.get("language"),
+        default=default_language,
+        fallback_text=quote or action,
+        allowed_languages=allowed_languages,
+    )
+    owner = _first_text(item, "owner", "speaker", "assignee") or "Unknown"
     return Commitment(
         id="C0",
         owner=owner,
         action=action,
         deadline=_normalize_deadline(
-            item.get("deadline"), meeting_date=meeting_date, language=language
+            _coerce_deadline_dict(item),
+            meeting_date=meeting_date,
+            language=language,
         ),
-        timestamp_s=_normalize_timestamp(item.get("timestamp_s")),
-        quote=_normalize_quote(item.get("quote"), warnings=warnings, item_label="commitment"),
+        timestamp_s=_normalize_timestamp(
+            item.get("timestamp_s")
+            if item.get("timestamp_s") is not None
+            else item.get("timestamp")
+        ),
+        quote=_normalize_quote(quote, warnings=warnings, item_label="commitment"),
         confidence=confidence,
         language=language,
     )
@@ -260,22 +301,34 @@ def _parse_rejection(
     item: dict[str, Any],
     *,
     warnings: list[str],
+    default_language: str,
+    allowed_languages: tuple[str, ...],
 ) -> Rejection | None:
-    summary = _clean_text(item.get("summary") or item.get("proposal"))
+    summary = _first_text(item, "summary", "proposal", "outcome") or _meaningful_quote(item)
     if not summary:
         return None
     confidence = _normalize_confidence(item.get("confidence"))
     if confidence is None:
         return None
-    language = _normalize_language(item.get("language"), default="en")
+    quote = _first_text(item, "quote", "excerpt", "outcome")
+    language = _normalize_language(
+        item.get("language"),
+        default=default_language,
+        fallback_text=quote or summary,
+        allowed_languages=allowed_languages,
+    )
     return Rejection(
         id="R0",
         summary=summary,
-        timestamp_s=_normalize_timestamp(item.get("timestamp_s")),
-        quote=_normalize_quote(item.get("quote"), warnings=warnings, item_label="rejection"),
+        timestamp_s=_normalize_timestamp(
+            item.get("timestamp_s")
+            if item.get("timestamp_s") is not None
+            else item.get("timestamp")
+        ),
+        quote=_normalize_quote(quote, warnings=warnings, item_label="rejection"),
         confidence=confidence,
         language=language,
-        reason=_clean_text(item.get("reason")) or None,
+        reason=_first_text(item, "reason") or None,
     )
 
 
@@ -283,20 +336,32 @@ def _parse_open_question(
     item: dict[str, Any],
     *,
     warnings: list[str],
+    default_language: str,
+    allowed_languages: tuple[str, ...],
 ) -> OpenQuestion | None:
-    question = _clean_text(item.get("question"))
+    question = _first_text(item, "question", "outcome", "summary") or _meaningful_quote(item)
     if not question:
         return None
     confidence = _normalize_confidence(item.get("confidence"))
     if confidence is None:
         return None
-    language = _normalize_language(item.get("language"), default="en")
+    quote = _first_text(item, "quote", "excerpt", "outcome")
+    language = _normalize_language(
+        item.get("language"),
+        default=default_language,
+        fallback_text=quote or question,
+        allowed_languages=allowed_languages,
+    )
     return OpenQuestion(
         id="Q0",
         question=question,
-        asked_by=_clean_text(item.get("asked_by")) or None,
-        timestamp_s=_normalize_timestamp(item.get("timestamp_s")),
-        quote=_normalize_quote(item.get("quote"), warnings=warnings, item_label="open question"),
+        asked_by=_first_text(item, "asked_by", "owner", "speaker") or None,
+        timestamp_s=_normalize_timestamp(
+            item.get("timestamp_s")
+            if item.get("timestamp_s") is not None
+            else item.get("timestamp")
+        ),
+        quote=_normalize_quote(quote, warnings=warnings, item_label="open question"),
         language=language,
         stakes=_clean_text(item.get("stakes")) or None,
         confidence=confidence,
@@ -335,14 +400,23 @@ def parse_extraction_response(
     input_tokens: int = 0,
     output_tokens: int = 0,
     pass_count: int = 1,
+    default_language: str = "en",
+    allowed_languages: tuple[str, ...] = (),
 ) -> DecisionLog:
     try:
         payload = _coerce_payload(response)
+        if "decision_log" in payload and isinstance(payload["decision_log"], dict):
+            payload = cast(dict[str, Any], payload["decision_log"])
         warnings: list[str] = []
 
         decision_items: list[Decision] = []
         for raw_item in _coerce_items(payload.get("decisions")):
-            parsed_decision = _parse_decision(raw_item, warnings=warnings)
+            parsed_decision = _parse_decision(
+                raw_item,
+                warnings=warnings,
+                default_language=default_language,
+                allowed_languages=allowed_languages,
+            )
             if parsed_decision is not None:
                 decision_items.append(parsed_decision)
 
@@ -352,19 +426,37 @@ def parse_extraction_response(
                 raw_item,
                 warnings=warnings,
                 meeting_date=meeting_date,
+                default_language=default_language,
+                allowed_languages=allowed_languages,
             )
             if parsed_commitment is not None:
                 commitment_items.append(parsed_commitment)
 
         rejection_items: list[Rejection] = []
-        for raw_item in _coerce_items(payload.get("rejected")):
-            parsed_rejection = _parse_rejection(raw_item, warnings=warnings)
+        rejected_payload = payload.get("rejected")
+        if rejected_payload is None:
+            rejected_payload = payload.get("rejections")
+        for raw_item in _coerce_items(rejected_payload):
+            parsed_rejection = _parse_rejection(
+                raw_item,
+                warnings=warnings,
+                default_language=default_language,
+                allowed_languages=allowed_languages,
+            )
             if parsed_rejection is not None:
                 rejection_items.append(parsed_rejection)
 
         question_items: list[OpenQuestion] = []
-        for raw_item in _coerce_items(payload.get("open_questions")):
-            parsed_question = _parse_open_question(raw_item, warnings=warnings)
+        question_payload = payload.get("open_questions")
+        if question_payload is None:
+            question_payload = payload.get("unresolved_open_questions")
+        for raw_item in _coerce_items(question_payload):
+            parsed_question = _parse_open_question(
+                raw_item,
+                warnings=warnings,
+                default_language=default_language,
+                allowed_languages=allowed_languages,
+            )
             if parsed_question is not None:
                 question_items.append(parsed_question)
 

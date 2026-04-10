@@ -1,0 +1,37 @@
+{
+  "_comment": "Expected DecisionLog baseline for bilingual_meeting_5min.mp3.",
+  "_generated": "2026-04-09",
+  "_fixture_audio": "bilingual_meeting_5min.mp3",
+  "decisions": [
+    {
+      "id": "D1",
+      "summary": "Adopt the Python SDK approach",
+      "timestamp_s": 40.0,
+      "speaker": "Pierre",
+      "confirmed_by": [
+        "Alice"
+      ],
+      "quote": "We are going with the Python SDK approach.",
+      "confidence": "high",
+      "language": "en"
+    }
+  ],
+  "commitments": [
+    {
+      "id": "C1",
+      "owner": "Alice",
+      "action": "Prepare the migration guide",
+      "deadline": {
+        "raw": "EOW",
+        "resolved_date": "2026-04-11",
+        "is_explicit": false
+      },
+      "timestamp_s": 65.0,
+      "quote": "I'll have it ready by Friday.",
+      "confidence": "high",
+      "language": "en"
+    }
+  ],
+  "rejected": [],
+  "open_questions": []
+}

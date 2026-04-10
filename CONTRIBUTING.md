@@ -14,17 +14,22 @@ This creates `.venv/` and installs the project in editable mode.
 ## Common commands
 
 ```bash
-uv run pytest tests/unit/test_config_loading.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py -q
-uv run pytest tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q
+uv run pytest tests/unit/test_config_loading.py tests/unit/test_pipeline_config_compat.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q
 uv run pytest tests/unit/test_cli_commands.py -q
+uv run pytest tests/benchmarks/test_performance.py -q -m benchmark
+uv run pytest tests/benchmarks/test_performance.py -q -m benchmark --benchmark-json /tmp/parler-benchmark-raw.json
+uv run python tests/benchmarks/update_baseline.py /tmp/parler-benchmark-raw.json tests/benchmarks/baseline.json
+uv run python tests/fixtures/generate_fixtures.py --all
+uv run parler-e2e
+uv run parler-e2e tests/e2e/test_full_pipeline_fr.py -q
 uv run python tests/smoke_test.py
-uv run ruff check parler tests/smoke_test.py
-uv run ruff format --check parler tests/smoke_test.py
+uv run ruff check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
+uv run ruff format --check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
 uv run mypy parler/
 uv build
 ```
 
-The wider `tests/`, `features/`, and roadmap modules are intentionally ahead of the currently implemented phases. Keep CI green by expanding the validated surface only when a phase is actually delivered; after the current Phase 7 core surface, the next major unfinished domains are full-system E2E/benchmark verification and fully provisioned fixtures.
+The wider `tests/`, `features/`, and roadmap modules still contain future-facing coverage. Keep CI green by expanding the validated surface only when a phase is actually delivered. Phase 8 now adds the verification scaffold itself: legacy E2E config compatibility, fixture-generation scripts, benchmark baselines, and the manual `.github/workflows/phase8-verification.yml` workflow for live verification.
 
 ## Contribution rules
 

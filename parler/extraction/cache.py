@@ -27,7 +27,7 @@ def build_extraction_cache_key(
     schema_version: str = "v1",
     meeting_date_anchor: str = "",
     extraction_policy_version: str = "v1",
-    normalization_policy_version: str = "v1",
+    normalization_policy_version: str = "v4",
 ) -> str:
     return stable_fingerprint(
         "extraction",

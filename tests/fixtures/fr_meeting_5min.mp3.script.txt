@@ -1,0 +1,10 @@
+Pierre. Bonjour a tous. On commence la reunion de lancement produit.
+Sophie. Le deploiement est pret. Il reste juste les derniers tests.
+Pierre. Tres bien. On part sur le quinze mai pour le lancement. C'est decide.
+Sophie. D'accord. Je note le lancement le quinze mai.
+Pierre. Sophie, peux-tu revoir la checklist de deploiement ?
+Sophie. Oui. Je vais revoir la checklist avant vendredi prochain.
+Pierre. Nous ne pouvons pas viser un lancement en mars.
+Sophie. Non. Ce n'est pas faisable avec la capacite actuelle de l'equipe.
+Pierre. Qui prend la migration de la base de donnees ?
+Sophie. On decidera du proprietaire apres la reunion.

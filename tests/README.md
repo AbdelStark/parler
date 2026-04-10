@@ -19,13 +19,16 @@ tests/
 ├── README.md                     (this file)
 ├── conftest.py                   (shared fixtures — see fixtures/)
 ├── fixtures/                     (test data and mock responses)
-│   ├── audio/                    (sample audio files for tests)
-│   ├── transcripts/              (pre-recorded Voxtral responses)
-│   ├── extractions/              (pre-recorded Mistral extraction responses)
+│   ├── audio/                    (generated synthetic audio fixtures)
+│   ├── transcripts/              (optional recorded Voxtral responses)
+│   ├── extractions/              (optional recorded extraction responses)
 │   └── decision_logs/            (expected decision log outputs)
 ├── unit/                         (pure function tests, no API calls)
 │   ├── test_audio_ingestion.py
 │   ├── test_chunk_assembly.py
+│   ├── test_cli_commands.py
+│   ├── test_e2e_runner.py
+│   ├── test_pipeline_config_compat.py
 │   ├── test_deadline_resolution.py
 │   ├── test_decision_extraction_parsing.py
 │   ├── test_speaker_attribution.py
@@ -38,34 +41,51 @@ tests/
 │   ├── test_retry_behavior.py
 │   ├── test_cache_behavior.py
 │   └── test_export_integrations.py
-└── e2e/                          (real API calls, marked @slow)
-    ├── test_full_pipeline_fr.py
-    ├── test_full_pipeline_bilingual.py
-    └── test_earnings_call.py
+├── e2e/                          (real API calls, marked @slow)
+│   ├── test_full_pipeline_fr.py
+│   ├── test_full_pipeline_bilingual.py
+│   └── test_earnings_call.py
+└── benchmarks/                   (opt-in performance budgets and baseline)
+    ├── test_performance.py
+    ├── update_baseline.py
+    └── baseline.json
 ```
 
 ## Running tests
 
 ```bash
 # All unit tests (fast, no API)
-pytest tests/unit/ -v
+uv run pytest tests/unit/ -v
 
 # All integration tests (mocked API)
-pytest tests/integration/ -v
+uv run pytest tests/integration/ -v
 
 # All BDD scenarios (mocked API)
-pytest features/ -v
+uv run pytest features/ -v
 
 # Everything except E2E (CI default)
-pytest tests/unit tests/integration features/ -v --tb=short
+uv run pytest tests/unit tests/integration tests/property -v --tb=short
 
 # E2E only (requires MISTRAL_API_KEY, costs ~$0.50)
-pytest tests/e2e/ -v -s
+uv run pytest tests/e2e/ -v -s
 
-# With coverage
-pytest tests/unit tests/integration features/ \
-  --cov=parler --cov-report=term-missing \
-  --cov-fail-under=90
+# Convenient local E2E runner
+uv run parler-e2e
+uv run parler-e2e tests/e2e/test_full_pipeline_fr.py -q
+
+# Benchmarks
+uv run pytest tests/benchmarks/test_performance.py -q -m benchmark
+uv run pytest tests/benchmarks/test_performance.py -q -m benchmark \
+  --benchmark-json /tmp/parler-benchmark-raw.json
+uv run python tests/benchmarks/update_baseline.py \
+  /tmp/parler-benchmark-raw.json \
+  tests/benchmarks/baseline.json
+```
+
+For fresh clones, generate synthetic audio before live E2E runs:
+
+```bash
+uv run python tests/fixtures/generate_fixtures.py --all
 ```
 
 ## Coverage targets
@@ -83,7 +103,7 @@ pytest tests/unit tests/integration features/ \
 
 ## Test data policy
 
-- Audio fixtures are synthetic (generated with pyttsx3 or gTTS) — never real meeting recordings
-- Transcripts in `fixtures/transcripts/` are real Voxtral responses recorded against fixture audio
+- Audio fixtures are synthetic (generated with `gtts`, `say`, or `espeak`) — never real meeting recordings
+- Transcripts in `fixtures/transcripts/` are optional real Voxtral responses recorded against synthetic fixture audio
 - No real personal data in any test fixture
-- French test fixtures use French text generated from public domain sources (e.g., Zola, Hugo)
+- Fresh clones may only contain fixture scripts, committed decision-log baselines, and placeholder directories

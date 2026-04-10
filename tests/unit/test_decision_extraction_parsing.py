@@ -27,7 +27,7 @@ VALID_FULL_RESPONSE = {
             "confirmed_by": ["Sophie"],
             "quote": "On part sur le 15 mai, c'est décidé.",
             "confidence": "high",
-            "language": "fr"
+            "language": "fr",
         }
     ],
     "commitments": [
@@ -35,31 +35,54 @@ VALID_FULL_RESPONSE = {
             "id": "C1",
             "owner": "Sophie",
             "action": "Review the deployment checklist",
-            "deadline": {
-                "raw": "vendredi prochain",
-                "resolved_date": None,
-                "is_explicit": False
-            },
+            "deadline": {"raw": "vendredi prochain", "resolved_date": None, "is_explicit": False},
             "timestamp_s": 848.0,
             "quote": "Je vais revoir le checklist avant vendredi prochain.",
             "confidence": "high",
-            "language": "fr"
+            "language": "fr",
         }
     ],
     "rejected": [],
-    "open_questions": []
+    "open_questions": [],
 }
 
-EMPTY_RESPONSE = {
-    "decisions": [],
-    "commitments": [],
-    "rejected": [],
-    "open_questions": []
+EMPTY_RESPONSE = {"decisions": [], "commitments": [], "rejected": [], "open_questions": []}
+
+LIVE_VARIANT_RESPONSE = {
+    "decisions": [
+        {
+            "outcome": "On part sur le 15 mai pour le lancement. C'est décidé.",
+            "date": "2026-05-15",
+            "owner": "Pierre",
+            "confidence": "high",
+        }
+    ],
+    "commitments": [
+        {
+            "outcome": "Je vais revoir la checklist avant vendredi prochain.",
+            "date": "2026-04-17",
+            "owner": "Sophie",
+            "confidence": "high",
+        }
+    ],
+    "rejections": [
+        {
+            "outcome": "Nous ne pouvons pas viser un lancement en mars.",
+            "owner": "Pierre",
+            "confidence": "high",
+        }
+    ],
+    "open_questions": [
+        {
+            "outcome": "Qui prend la migration de la base de données ?",
+            "owner": None,
+            "confidence": "high",
+        }
+    ],
 }
 
 
 class TestValidFullResponse:
-
     def test_parses_valid_full_response(self):
         log = parse_extraction_response(VALID_FULL_RESPONSE, meeting_date=date(2026, 4, 9))
         assert len(log.decisions) == 1
@@ -93,7 +116,6 @@ class TestValidFullResponse:
 
 
 class TestMalformedResponses:
-
     def test_missing_top_level_key_handled_gracefully(self):
         """Response missing 'rejected' key — should default to empty list."""
         partial = {"decisions": [], "commitments": [], "open_questions": []}
@@ -102,7 +124,11 @@ class TestMalformedResponses:
 
     def test_extra_unknown_fields_ignored(self):
         """LLM may add unexpected fields — they should be silently dropped."""
-        response = {**VALID_FULL_RESPONSE, "extra_field": "unexpected", "debug_info": {"tokens": 500}}
+        response = {
+            **VALID_FULL_RESPONSE,
+            "extra_field": "unexpected",
+            "debug_info": {"tokens": 500},
+        }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert len(log.decisions) == 1  # parsing succeeded
 
@@ -110,11 +136,20 @@ class TestMalformedResponses:
         """A decision without a summary is incomplete and should be dropped."""
         response = {
             "decisions": [
-                {"id": "D1", "confidence": "high", "language": "fr",
-                 "quote": "...", "timestamp_s": None, "speaker": None, "confirmed_by": []}
+                {
+                    "id": "D1",
+                    "confidence": "high",
+                    "language": "fr",
+                    "quote": "...",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                }
                 # missing "summary"
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert len(log.decisions) == 0
@@ -125,14 +160,18 @@ class TestMalformedResponses:
             "decisions": [],
             "commitments": [
                 {
-                    "id": "C1", "action": "Send the report",
-                    "confidence": "medium", "language": "en",
-                    "quote": "I'll send the report.", "timestamp_s": None,
-                    "deadline": None
+                    "id": "C1",
+                    "action": "Send the report",
+                    "confidence": "medium",
+                    "language": "en",
+                    "quote": "I'll send the report.",
+                    "timestamp_s": None,
+                    "deadline": None,
                     # missing "owner"
                 }
             ],
-            "rejected": [], "open_questions": []
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert len(log.commitments) == 1
@@ -142,11 +181,20 @@ class TestMalformedResponses:
         """Confidence values outside {"high", "medium"} should be normalized to "medium"."""
         response = {
             "decisions": [
-                {"id": "D1", "summary": "Launch decided", "confidence": "very_high",
-                 "language": "en", "quote": "...", "timestamp_s": None,
-                 "speaker": None, "confirmed_by": []}
+                {
+                    "id": "D1",
+                    "summary": "Launch decided",
+                    "confidence": "very_high",
+                    "language": "en",
+                    "quote": "...",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                }
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         # "very_high" is not a valid confidence level; normalize to "medium"
@@ -156,11 +204,20 @@ class TestMalformedResponses:
         """Items with confidence 'low' should be excluded (only high/medium included)."""
         response = {
             "decisions": [
-                {"id": "D1", "summary": "Maybe launch on May 15", "confidence": "low",
-                 "language": "en", "quote": "...", "timestamp_s": None,
-                 "speaker": None, "confirmed_by": []}
+                {
+                    "id": "D1",
+                    "summary": "Maybe launch on May 15",
+                    "confidence": "low",
+                    "language": "en",
+                    "quote": "...",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                }
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert len(log.decisions) == 0
@@ -174,19 +231,51 @@ class TestMalformedResponses:
         log = parse_extraction_response(None, meeting_date=date(2026, 4, 9))
         assert log.is_empty
 
+    def test_live_variant_schema_is_parsed(self):
+        log = parse_extraction_response(
+            LIVE_VARIANT_RESPONSE,
+            meeting_date=date(2026, 4, 9),
+            default_language="fr",
+            allowed_languages=("fr", "en"),
+        )
+        assert len(log.decisions) == 1
+        assert len(log.commitments) == 1
+        assert len(log.rejected) == 1
+        assert len(log.open_questions) == 1
+        assert log.decisions[0].speaker == "Pierre"
+        assert log.commitments[0].owner == "Sophie"
+        assert log.commitments[0].deadline is not None
+        assert log.commitments[0].deadline.resolved_date == date(2026, 4, 17)
+        assert log.decisions[0].language == "fr"
+
 
 class TestIDNormalization:
-
     def test_missing_ids_auto_assigned(self):
         """Items without IDs should get auto-assigned IDs in order."""
         response = {
             "decisions": [
-                {"summary": "Decision one", "confidence": "high", "language": "en",
-                 "quote": "...", "timestamp_s": None, "speaker": None, "confirmed_by": []},
-                {"summary": "Decision two", "confidence": "high", "language": "en",
-                 "quote": "...", "timestamp_s": None, "speaker": None, "confirmed_by": []},
+                {
+                    "summary": "Decision one",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": "...",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                },
+                {
+                    "summary": "Decision two",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": "...",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                },
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert log.decisions[0].id == "D1"
@@ -196,13 +285,30 @@ class TestIDNormalization:
         """If the LLM returns two items with the same ID, renumber them."""
         response = {
             "decisions": [
-                {"id": "D1", "summary": "First", "confidence": "high", "language": "en",
-                 "quote": ".", "timestamp_s": None, "speaker": None, "confirmed_by": []},
-                {"id": "D1", "summary": "Second (duplicate ID)", "confidence": "high",
-                 "language": "en", "quote": ".", "timestamp_s": None, "speaker": None,
-                 "confirmed_by": []},
+                {
+                    "id": "D1",
+                    "summary": "First",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": ".",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                },
+                {
+                    "id": "D1",
+                    "summary": "Second (duplicate ID)",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": ".",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                },
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         ids = [d.id for d in log.decisions]
@@ -210,17 +316,26 @@ class TestIDNormalization:
 
 
 class TestQuoteValidation:
-
     def test_empty_quote_accepted_with_warning(self, caplog):
         """Empty quote is technically valid — item retained but warning logged."""
         import logging
+
         response = {
             "decisions": [
-                {"id": "D1", "summary": "Decision", "confidence": "high",
-                 "language": "en", "quote": "", "timestamp_s": None,
-                 "speaker": None, "confirmed_by": []}
+                {
+                    "id": "D1",
+                    "summary": "Decision",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": "",
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                }
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         with caplog.at_level(logging.WARNING):
             log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
@@ -232,11 +347,20 @@ class TestQuoteValidation:
         long_quote = "A" * 600
         response = {
             "decisions": [
-                {"id": "D1", "summary": "Decision", "confidence": "high",
-                 "language": "en", "quote": long_quote, "timestamp_s": None,
-                 "speaker": None, "confirmed_by": []}
+                {
+                    "id": "D1",
+                    "summary": "Decision",
+                    "confidence": "high",
+                    "language": "en",
+                    "quote": long_quote,
+                    "timestamp_s": None,
+                    "speaker": None,
+                    "confirmed_by": [],
+                }
             ],
-            "commitments": [], "rejected": [], "open_questions": []
+            "commitments": [],
+            "rejected": [],
+            "open_questions": [],
         }
         log = parse_extraction_response(response, meeting_date=date(2026, 4, 9))
         assert len(log.decisions[0].quote) <= 503  # 500 + "..."

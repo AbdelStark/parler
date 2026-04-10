@@ -6,12 +6,15 @@ import math
 import mimetypes
 import sys
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass
+from inspect import Parameter, signature
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 
 from ..errors import APIError
 from ..models import AudioFile, RawVoxtralChunkResponse, Transcript, TranscriptSegment
+from ..util.language import detect_language_with_codeswitch, normalize_language_code
 from ..util.retry import RetryConfig, RetryExhaustedError, is_retriable_http_status, with_retry
 from .assembler import assemble_chunks
 from .cache import TranscriptCache
@@ -19,6 +22,7 @@ from .quality import TranscriptQualityChecker, TranscriptQualityReport
 
 _SdkMistralClient: Any
 MistralFile: Any
+httpx: Any | None = None
 
 try:
     from mistralai.client import Mistral as _SdkMistralClient
@@ -26,6 +30,9 @@ try:
 except ImportError:  # pragma: no cover - older SDKs
     _SdkMistralClient = None
     MistralFile = None
+
+with suppress(ImportError):  # pragma: no cover - optional dependency detail
+    import httpx
 
 
 class APIStatusError(Exception):
@@ -62,6 +69,23 @@ class MistralClient:
         self.audio = SimpleNamespace(transcriptions=SimpleNamespace(create=create))
 
 
+def _filter_supported_kwargs(method: object, kwargs: dict[str, object]) -> dict[str, object]:
+    try:
+        parameters = signature(cast(Any, method)).parameters.values()
+    except (TypeError, ValueError):
+        return kwargs
+
+    if any(parameter.kind == Parameter.VAR_KEYWORD for parameter in parameters):
+        return kwargs
+
+    accepted = {
+        parameter.name
+        for parameter in parameters
+        if parameter.kind in {Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY}
+    }
+    return {key: value for key, value in kwargs.items() if key in accepted}
+
+
 @dataclass(frozen=True)
 class _ChunkSpec:
     index: int
@@ -94,50 +118,93 @@ def _required_value(raw: object, name: str) -> Any:
     return getattr(raw, name)
 
 
+def _normalize_optional_value(value: Any) -> Any | None:
+    if value is None:
+        return None
+    if value.__class__.__name__ == "Unset":
+        return None
+    return value
+
+
 def _optional_value(raw: object, *names: str) -> Any | None:
     if isinstance(raw, dict):
         for name in names:
             if name in raw:
-                return raw[name]
+                return _normalize_optional_value(raw[name])
         return None
     raw_dict = getattr(raw, "__dict__", {})
     for name in names:
         if name in raw_dict:
-            return raw_dict[name]
+            return _normalize_optional_value(raw_dict[name])
     return None
 
 
+def _requested_languages(languages: Iterable[str] | None) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for language in languages or ():
+        code = normalize_language_code(language)
+        if code and code not in normalized:
+            normalized.append(code)
+    return tuple(normalized)
+
+
 def _normalize_chunk_response(
-    raw_response: object, *, chunk_start_s: float
+    raw_response: object,
+    *,
+    chunk_start_s: float,
+    chunk_duration_s: float,
+    requested_languages: tuple[str, ...] = (),
 ) -> RawVoxtralChunkResponse:
     raw_segments = cast(Iterable[object], _required_value(raw_response, "segments"))
     segments: list[TranscriptSegment] = []
+    default_language = normalize_language_code(_optional_value(raw_response, "language"))
+    if default_language is None and len(requested_languages) == 1:
+        default_language = requested_languages[0]
 
-    for raw_segment in raw_segments:
+    for index, raw_segment in enumerate(raw_segments):
         speaker_id = _optional_value(raw_segment, "speaker_id", "speaker", "speaker_label")
+        raw_segment_id = _optional_value(raw_segment, "id")
+        avg_logprob = _optional_value(raw_segment, "avg_logprob")
+        score = _optional_value(raw_segment, "score")
+        confidence = float(score) if score is not None else _logprob_to_confidence(avg_logprob)
+        segment_text = str(_required_value(raw_segment, "text"))
+        segment_language = normalize_language_code(_optional_value(raw_segment, "language"))
+        if segment_language is None:
+            segment_language, code_switch = detect_language_with_codeswitch(
+                segment_text,
+                candidates=requested_languages,
+                default=default_language,
+            )
+        else:
+            _, code_switch = detect_language_with_codeswitch(
+                segment_text,
+                candidates=requested_languages,
+                default=segment_language,
+            )
         segments.append(
             TranscriptSegment(
-                id=int(_required_value(raw_segment, "id")),
+                id=int(raw_segment_id) if raw_segment_id is not None else index,
                 start_s=float(_required_value(raw_segment, "start")) + chunk_start_s,
                 end_s=float(_required_value(raw_segment, "end")) + chunk_start_s,
-                text=str(_required_value(raw_segment, "text")),
-                language=str(
-                    _optional_value(raw_segment, "language")
-                    or _required_value(raw_response, "language")
-                ),
+                text=segment_text,
+                language=segment_language or "",
                 speaker_id=str(speaker_id) if speaker_id else None,
                 speaker_confidence="high" if speaker_id else None,
-                confidence=_logprob_to_confidence(_optional_value(raw_segment, "avg_logprob")),
+                confidence=confidence,
                 no_speech_prob=float(_optional_value(raw_segment, "no_speech_prob") or 0.0),
-                code_switch=False,
+                code_switch=code_switch,
                 words=None,
             )
         )
 
+        if default_language is None and segment_language:
+            default_language = segment_language
+
     return RawVoxtralChunkResponse(
         text=str(_required_value(raw_response, "text")),
-        language=str(_required_value(raw_response, "language")),
-        duration=float(_required_value(raw_response, "duration")) + chunk_start_s,
+        language=default_language or "",
+        duration=float(_optional_value(raw_response, "duration") or chunk_duration_s)
+        + chunk_start_s,
         segments=tuple(segments),
     )
 
@@ -209,6 +276,7 @@ class VoxtralTranscriber:
         languages: Iterable[str] | None,
         chunk: _ChunkSpec,
     ) -> dict[str, object]:
+        requested_languages = _requested_languages(languages)
         kwargs: dict[str, object] = {
             "model": self.model,
             "file": self._file_argument(audio_file),
@@ -218,10 +286,8 @@ class VoxtralTranscriber:
         }
         if self.request_mode == "timestamp_first":
             kwargs["timestamp_granularities"] = [self.timestamp_granularity_mode]
-        elif languages:
-            first_language = next(iter(languages), None)
-            if first_language is not None:
-                kwargs["language"] = first_language
+        if len(requested_languages) == 1:
+            kwargs["language"] = requested_languages[0]
 
         # Logical chunk metadata for mocks and future chunk-file generation.
         kwargs["start_time"] = chunk.start_s
@@ -248,7 +314,8 @@ class VoxtralTranscriber:
         def request() -> object:
             try:
                 kwargs = self._request_kwargs(audio_file, languages=languages, chunk=chunk)
-                response = self._client.audio.transcriptions.create(**kwargs)
+                create = self._client.audio.transcriptions.create
+                response = create(**_filter_supported_kwargs(create, kwargs))
                 file_arg = kwargs.get("file")
                 content = getattr(file_arg, "content", None)
                 if hasattr(content, "close"):
@@ -259,12 +326,21 @@ class VoxtralTranscriber:
                     raise
                 raise self._translate_api_error(exc) from exc
 
+        retriable_exceptions: list[type[BaseException]] = [
+            APIStatusError,
+            TimeoutError,
+            ConnectionError,
+        ]
+        if httpx is not None:
+            retriable_exceptions.append(httpx.TimeoutException)
+            retriable_exceptions.append(httpx.NetworkError)
+
         try:
             raw_response = with_retry(
                 request,
                 config=RetryConfig(
                     max_retries=self.max_retries,
-                    retriable_exceptions=(APIStatusError, TimeoutError, ConnectionError),
+                    retriable_exceptions=tuple(retriable_exceptions),
                 ),
             )
         except RetryExhaustedError as exc:
@@ -272,7 +348,12 @@ class VoxtralTranscriber:
         except TimeoutError as exc:
             raise APIError("Timeout during transcription") from exc
 
-        return _normalize_chunk_response(raw_response, chunk_start_s=chunk.start_s)
+        return _normalize_chunk_response(
+            raw_response,
+            chunk_start_s=chunk.start_s,
+            chunk_duration_s=chunk.duration_s,
+            requested_languages=_requested_languages(languages),
+        )
 
     def transcribe(
         self, audio_file: AudioFile, languages: Iterable[str] | None = None
@@ -284,6 +365,7 @@ class VoxtralTranscriber:
             "preprocessing_fingerprint": self.preprocessing_fingerprint,
             "context_bias_fingerprint": _context_bias_fingerprint(self.context_bias),
             "language_fingerprint": _language_fingerprint(languages),
+            "normalization_version": "v2",
         }
         if self.cache is not None:
             cached = self.cache.get(audio_file.content_hash, self.model, **cache_kwargs)

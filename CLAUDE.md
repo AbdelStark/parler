@@ -25,10 +25,11 @@
 
 - Repository status on `2026-04-09`: implementation in progress, not implementation-complete.
 - Phase 1 through Phase 7 core surfaces are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, stable Markdown/HTML/JSON rendering, explicit pipeline state/checkpoint helpers, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, export adapters, canonical CLI commands, prompt scaffolding, and compatibility shims.
-- Later phases are still incomplete: Phase 8 full-system verification, fixture-complete E2E coverage, and remaining hardening/polish work remain to be built.
+- Phase 8 verification scaffolding is now present: legacy `PipelineConfig` compatibility, synthetic fixture generation/recording scripts, placeholder fixture directories, benchmark baseline support, and a manual GitHub Actions workflow for live E2E/benchmark runs.
+- Remaining unfinished work is now mostly live-asset provisioning and higher-level hardening, not missing core pipeline stages.
 - The deadline test drift from earlier Phase 5 work is reconciled locally: the suite now treats `2026-04-09` as Thursday, which matches the implemented resolver and the broader parametrized/property contract.
 - CI and publishing workflows now exist under `.github/workflows/`.
-- E2E fixture audio/transcript/extraction assets referenced by tests are not committed yet; only `tests/fixtures/decision_logs/fr_meeting_5min_expected.json` exists.
+- Fresh clones contain committed decision-log baselines plus placeholder fixture directories; generated audio and recorded vendor outputs remain opt-in and may be absent.
 - Git history is linear and docs/tests-heavy; current branch is `main`.
 
 </repo_state>
@@ -49,7 +50,8 @@
 | Attribution | complete | `parler/attribution/*`, `parler/prompts/attribution.py`, and `parler.transcription.attributor` shim are implemented and test-backed |
 | Exports | complete | `parler/export/{notion,linear,jira,slack,result}.py` exist and are integration-tested |
 | CLI surface | complete for current contract | `process`, `transcribe`, `extract --from-state`, `report --from-state`, and `cache {list,show,clear}` are implemented and unit-tested |
-| Formal verification | complete for implemented slice | validated with `uv run pytest`, `ruff`, `mypy`, `uv build`, and smoke execution; current Phase 1-7 slice is green |
+| Formal verification | complete for implemented fast slice | widened unit/integration/property CI surface is green locally with `uv run pytest`, `ruff`, `mypy`, `uv build`, and smoke execution |
+| Phase 8 verification scaffold | operational, live runs opt-in | legacy `PipelineConfig` wrapper, `tests/fixtures/*` generation/recording scripts, placeholder fixture directories, benchmark baseline, and `.github/workflows/phase8-verification.yml` exist |
 
 </implementation_status>
 
@@ -107,8 +109,12 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | Sync dev env | `uv sync --locked --group dev` | now | installs editable package and pinned dev toolchain |
 | Focused unit slice | `uv run pytest tests/unit/test_config_loading.py -q` | now | Phase 1 anchor |
 | Focused extraction core | `uv run pytest tests/unit/test_decision_extraction_parsing.py tests/property/test_parsing_properties.py tests/integration/test_mistral_extraction.py -q` | now | green on current implementation |
-| Focused Phase 1-7 slice | `uv run pytest tests/unit/test_config_loading.py tests/unit/test_cli_commands.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q` | now | green on current implementation |
+| Compatibility surface | `uv run pytest tests/unit/test_pipeline_config_compat.py -q` | now | proves legacy E2E config still normalizes into `ParlerConfig` |
+| Focused implemented slice | `uv run pytest tests/unit/test_config_loading.py tests/unit/test_pipeline_config_compat.py tests/unit/test_cli_commands.py tests/unit/test_report_rendering.py tests/unit/test_pipeline_orchestration.py tests/unit/test_audio_ingestion.py tests/unit/test_chunk_assembly.py tests/unit/test_transcript_quality.py tests/unit/test_speaker_attribution.py tests/unit/test_decision_extraction_parsing.py tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/integration/test_retry_behavior.py tests/integration/test_voxtral_integration.py tests/integration/test_cache_behavior.py tests/integration/test_mistral_extraction.py tests/integration/test_export_integrations.py tests/property/test_deadline_resolver_properties.py tests/property/test_parsing_properties.py -q` | now | green on current implementation |
 | Deadline resolver suite | `uv run pytest tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/property/test_deadline_resolver_properties.py -q` | now | green after reconciling the stale weekday assertions |
+| Generate synthetic fixtures | `uv run python tests/fixtures/generate_fixtures.py --all` | Phase 8 | audio generation needs `gtts` or `say`/`espeak` plus `ffmpeg`; silence fixture works with stdlib only |
+| Local E2E runner | `uv run parler-e2e` | Phase 8 | loads `.env`, verifies `ffprobe`, auto-generates missing fixtures, and defaults extraction to `mistral-medium-latest` |
+| Benchmarks | `uv run pytest tests/benchmarks/test_performance.py -q -m benchmark --benchmark-json /tmp/parler-benchmark-raw.json && uv run python tests/benchmarks/update_baseline.py /tmp/parler-benchmark-raw.json tests/benchmarks/baseline.json` | Phase 8 | writes the reviewed summary baseline JSON |
 | Smoke test editable install | `uv run python tests/smoke_test.py` | now | exercises import surface and CLI help |
 | Fast verification | `uv run pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 8+ | widen only as later domains land |
 | E2E | `uv run pytest tests/e2e -v -s -m slow` | Phase 8 | requires `MISTRAL_API_KEY`, generated fixtures, and installed test deps [verify] |
@@ -137,7 +143,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
       - Treat `SPEC.md` and `SDD.md` as the source of truth; read them before assuming a test or RFC is correct.
       - Keep `assemble_chunks`, deadline resolution, parser normalization, retry logic, and cache-key builders pure and separately testable.
       - Preserve transcript segment IDs and timestamps; speaker turns are a rendering concern, not a mutation of canonical transcript structure.
-      - Keep the current compatibility baseline: canonical Phase 1-5 modules plus `PipelineConfig = ParlerConfig`, `parler.utils.retry`, `parler.transcription.assembler`, and `parler.transcription.attributor`.
+      - Keep the current compatibility baseline: canonical runtime modules plus the legacy `PipelineConfig` wrapper, `parler.utils.retry`, `parler.transcription.assembler`, and `parler.transcription.attributor`.
       - Add new compatibility shims only when a new test surface requires them; keep future extraction/export aliases narrow and explicit.
       - Keep export adapters isolated from renderer logic; local output success must survive export failure.
       - Treat checkpoints and caches as sensitive local artifacts; use restrictive permissions where the OS supports them.
@@ -233,7 +239,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | `ruff check tests/` reports many issues outside CI scope | benchmark/E2E/integration test backlog predates the implemented verification slice | keep CI/fast verification on `parler` + `tests/smoke_test.py` until you deliberately widen test lint scope |
 | `ModuleNotFoundError: parler.utils.retry` | tests import `utils`, design docs say `util` | expose `parler/utils/` shim or normalize references in one coordinated pass |
 | `ConfigError: api_key` or CLI exit code `3` | `MISTRAL_API_KEY` / `PARLER_API_KEY` missing | set one env var; never hardcode the key |
-| E2E fixture audio or transcript JSON missing | only the decision-log fixture is committed today | generate synthetic fixtures per `tests/fixtures/README.md` or skip E2E |
+| E2E fixture audio or transcript JSON missing | fresh clone only has placeholder directories and committed baselines | generate synthetic fixtures per `tests/fixtures/README.md`, record fixtures deliberately, or skip E2E |
 | Export side effect failed after local render succeeded | remote Notion/Linear/Jira/Slack call failed but local report generation should still succeed | preserve local outputs, inspect `ExportResult.error`, and retry the adapter independently |
 
   </known_issues>
@@ -264,6 +270,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
   - `contract-reconciliation.md`: resolve drift between spec, design, tests, features, and RFCs before coding
   - `vertical-slice-implementation.md`: extend `parler/` in narrow, test-backed phases
   - `test-driven-delivery.md`: use the layered pytest/BDD/property/benchmark strategy correctly
+  - `fixture-generation.md`: generate synthetic fixtures, record opt-in vendor outputs, and manage benchmark/E2E verification assets safely
   - `mistral-pipeline.md`: implement Voxtral/Mistral adapters, caches, quality gates, and parser normalization
   - `rendering-and-export.md`: implement canonical reports and isolated Notion/Linear/Jira/Slack adapters
   - `orchestrator-and-cli.md`: implement `ProcessingState`, checkpoint/resume, cost gating, and CLI commands
@@ -286,6 +293,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
     - `2026-04-09`: packaging, locking, build, and publishing are standardized on `uv` / `uv_build`; avoid mixing `pip`, Hatch, Poetry, or ad hoc release commands.
     - `2026-04-09`: report rendering and export adapters are separate concerns: renderer logic owns canonical local artifacts, and exporter failures must degrade to `ExportResult` errors without invalidating local output.
     - `2026-04-09`: checkpoint/state parsing is a first-class module in `parler/pipeline/state.py`; CLI rerender/extract flows should load canonical state from disk instead of re-deriving it ad hoc.
+    - `2026-04-09`: Phase 8 verification stays opt-in for live API usage; keep generated audio, recorded transcript/extraction fixtures, and benchmark baselines explicit and reviewable.
   </project_decisions>
 
   <lessons_learned>

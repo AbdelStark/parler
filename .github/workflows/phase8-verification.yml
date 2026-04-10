@@ -1,0 +1,85 @@
+name: Phase 8 Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run real API E2E tests"
+        required: true
+        type: boolean
+        default: false
+      run_benchmarks:
+        description: "Run performance benchmarks"
+        required: true
+        type: boolean
+        default: false
+      approved_e2e_budget_usd:
+        description: "Manual approval budget for E2E spend in USD"
+        required: true
+        default: "1.00"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.18"
+          enable-cache: true
+
+      - name: Sync project
+        run: uv sync --locked --group dev
+
+      - name: Show approved E2E budget
+        if: ${{ inputs.run_e2e }}
+        run: echo "Approved E2E budget: ${{ inputs.approved_e2e_budget_usd }} USD"
+
+      - name: Require API key for E2E
+        if: ${{ inputs.run_e2e && env.MISTRAL_API_KEY == '' }}
+        run: |
+          echo "MISTRAL_API_KEY secret is required for E2E verification."
+          exit 1
+
+      - name: Show fixture inventory
+        run: find tests/fixtures -maxdepth 2 -type f | sort
+
+      - name: Check Phase 8 compatibility surface
+        run: >
+          uv run pytest
+          tests/unit/test_pipeline_config_compat.py
+          -q
+
+      - name: Run E2E verification
+        if: ${{ inputs.run_e2e }}
+        run: uv run pytest tests/e2e -v -s -m slow
+
+      - name: Run benchmarks
+        if: ${{ inputs.run_benchmarks }}
+        run: >
+          uv run pytest
+          tests/benchmarks/test_performance.py
+          -q -m benchmark
+          --benchmark-json tests/benchmarks/current-benchmark.json
+
+      - name: Upload benchmark artifact
+        if: ${{ inputs.run_benchmarks }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            tests/benchmarks/baseline.json
+            tests/benchmarks/current-benchmark.json

@@ -2,7 +2,7 @@
 
 > Multilingual voice intelligence built on Voxtral. Decision logs from French/English meetings and earnings calls.
 
-**Status: Alpha.** Phase 1 through Phase 7 core surfaces are implemented: typed models, config loading, rendering, orchestration/state handling, audio ingestion, retry utilities, Voxtral transcription, transcript quality evaluation, semantic caching, speaker attribution heuristics, decision extraction, export adapters, canonical CLI commands, and `uv`-based packaging/publishing. Remaining roadmap work is centered on Phase 8 full-system verification, fixture-complete E2E coverage, and later polish.
+**Status: Alpha.** Phase 1 through Phase 7 core runtime surfaces are implemented, and the Phase 8 verification scaffold is now in tree: legacy `PipelineConfig` compatibility for E2E tests, synthetic fixture generation/recording scripts, benchmark baseline support, widened fast CI coverage, and a manual GitHub Actions workflow for live E2E/benchmark runs. Real API recordings and generated audio assets remain opt-in.
 
 The canonical sources of truth are:
 
@@ -79,6 +79,15 @@ uv sync --locked --group dev
 # Validate config loading
 uv run parler config validate --config parler.toml
 
+# Generate synthetic verification fixtures
+uv run python tests/fixtures/generate_fixtures.py --all
+
+# Run local E2E with .env loading, fixture generation, FFmpeg check,
+# and a vibe-compatible extraction default
+uv run parler-e2e
+uv run parler-e2e tests/e2e/test_full_pipeline_fr.py -q
+uv run parler-e2e --model mistral-vibe-cli-latest -k pipeline_completes
+
 # Inspect the CLI
 uv run parler --help
 uv run parler transcribe meeting.mp3 --format json
@@ -88,6 +97,7 @@ uv run parler cache list
 # Run the implemented test-backed slice
 uv run pytest \
   tests/unit/test_config_loading.py \
+  tests/unit/test_pipeline_config_compat.py \
   tests/unit/test_cli_commands.py \
   tests/unit/test_report_rendering.py \
   tests/unit/test_pipeline_orchestration.py \
@@ -106,11 +116,18 @@ uv run pytest \
   tests/property/test_deadline_resolver_properties.py \
   tests/property/test_parsing_properties.py -q
 
+# Run opt-in benchmarks and refresh the reviewed summary baseline
+uv run pytest tests/benchmarks/test_performance.py -q -m benchmark \
+  --benchmark-json /tmp/parler-benchmark-raw.json
+uv run python tests/benchmarks/update_baseline.py \
+  /tmp/parler-benchmark-raw.json \
+  tests/benchmarks/baseline.json
+
 # Build distributable artifacts
 uv build
 ```
 
-Decision extraction, canonical Markdown/HTML/JSON rendering, isolated Notion/Linear/Jira/Slack export adapters, checkpoint loading, and the canonical `process` / `transcribe` / `extract --from-state` / `report --from-state` / `cache` CLI commands are now implemented and test-backed. The next major roadmap focus is Phase 8 full-system verification with provisioned E2E fixtures and benchmark baselines.
+Decision extraction, canonical Markdown/HTML/JSON rendering, isolated Notion/Linear/Jira/Slack export adapters, checkpoint loading, and the canonical `process` / `transcribe` / `extract --from-state` / `report --from-state` / `cache` CLI commands are implemented and test-backed. Phase 8 now covers the verification layer around that runtime: fixture scripts, compatibility adapters, a repo-native `uv run parler-e2e` wrapper for live tests, benchmark baselines, and manual live verification workflow. The remaining roadmap work is higher-level hardening and polish, not missing core pipeline stages.
 
 ## Design
 

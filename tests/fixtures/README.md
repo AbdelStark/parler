@@ -1,72 +1,86 @@
 # Test Fixtures
 
-Test data for the parler test suite. All fixtures are synthetic — no real meeting recordings.
+Test data for the `parler` verification suite. All fixtures are synthetic. Never
+record or commit real meeting audio, real transcripts, or secret-bearing artifacts.
 
 ## Directory layout
 
-```
+```text
 fixtures/
-├── audio/                          # Synthetic audio files for E2E tests
-│   ├── fr_meeting_5min.mp3         # Short French business meeting (gTTS)
-│   ├── bilingual_meeting_5min.mp3  # FR/EN code-switching meeting (gTTS)
-│   └── silence_30s.wav             # 30 seconds of silence (edge case)
-│
-├── transcripts/                    # Pre-recorded Voxtral JSON responses
-│   ├── fr_meeting_5min.json        # Voxtral output for fr_meeting_5min.mp3
-│   └── bilingual_meeting_5min.json # Voxtral output for bilingual fixture
-│
-├── extractions/                    # Pre-recorded Mistral extraction responses
-│   ├── fr_meeting_5min.json        # Raw Mistral chat response (before parsing)
-│   └── bilingual_meeting_5min.json
-│
-└── decision_logs/                  # Expected final DecisionLog outputs
-    ├── fr_meeting_5min_expected.json
-    └── bilingual_expected.json
+├── audio/                          # Generated synthetic audio fixtures (.gitkeep by default)
+├── transcripts/                    # Optional recorded Voxtral transcript fixtures (.gitkeep by default)
+├── extractions/                    # Optional recorded extraction fixtures (.gitkeep by default)
+├── decision_logs/                  # Committed expected DecisionLog baselines
+│   ├── fr_meeting_5min_expected.json
+│   └── bilingual_expected.json
+├── generate_fixtures.py            # Synthetic audio + silence generator
+├── record_voxtral.py               # Opt-in real API recorder for transcript fixtures
+└── record_extraction.py            # Opt-in real API recorder for extraction fixtures
 ```
+
+Fresh clones only contain the committed baselines, scripts, and placeholder directories.
+Audio, transcript, and extraction fixtures are generated or recorded deliberately.
 
 ## Generating fixtures
 
-### Audio fixtures
+### Synthetic audio fixtures
 
 ```bash
-# Install gTTS
-pip install gTTS
+# Optional speech backend:
+# - `uv add --dev gtts`
+# - or make sure `say`/`espeak` and `ffmpeg` exist on PATH
 
-# Generate French fixture
-python tests/fixtures/generate_fixtures.py --lang fr --output tests/fixtures/audio/fr_meeting_5min.mp3
+# Generate the French meeting fixture
+uv run python tests/fixtures/generate_fixtures.py --fixture fr
 
-# Generate bilingual fixture
-python tests/fixtures/generate_fixtures.py --bilingual --output tests/fixtures/audio/bilingual_meeting_5min.mp3
+# Generate the bilingual fixture
+uv run python tests/fixtures/generate_fixtures.py --bilingual
+
+# Generate the long earnings-call fixture
+uv run python tests/fixtures/generate_fixtures.py --earnings-call
+
+# Generate the deterministic silence fixture (no TTS backend required)
+uv run python tests/fixtures/generate_fixtures.py --silence
+
+# Generate everything
+uv run python tests/fixtures/generate_fixtures.py --all
 ```
 
-### Transcript fixtures (requires real API key)
+The generator also writes `*.script.txt` manifests so the spoken source text stays
+reviewable in git even when audio is not committed.
+
+### Transcript fixtures (requires real API key, opt-in)
 
 ```bash
-# Record real Voxtral responses against fixture audio
-MISTRAL_API_KEY=sk-... python tests/fixtures/record_voxtral.py
-
-# This creates tests/fixtures/transcripts/*.json
+MISTRAL_API_KEY=sk-... uv run python tests/fixtures/record_voxtral.py
 ```
 
-### Extraction fixtures (requires real API key)
+This records real Voxtral responses against synthetic audio into
+`tests/fixtures/transcripts/*.json`.
+
+### Extraction fixtures (requires real API key, opt-in)
 
 ```bash
-# Record real Mistral extraction responses against transcript fixtures
-MISTRAL_API_KEY=sk-... python tests/fixtures/record_extraction.py
+MISTRAL_API_KEY=sk-... uv run python tests/fixtures/record_extraction.py
 ```
+
+This records real extraction responses against synthetic transcripts into
+`tests/fixtures/extractions/*.json`.
+
+Recorded transcript and extraction fixtures are real vendor outputs generated from
+synthetic audio. Review them before deciding whether to commit them.
 
 ## Data policy
 
-- Audio fixtures are **synthetic** (gTTS-generated) — never real meeting recordings
-- Text content is fictional French business meeting dialogue
-- No real personal data (names are fictional: Pierre, Sophie, Marc, Alice)
-- French text draws on fictional business scenarios, not real events
-- Transcript fixtures are real Voxtral responses recorded against the synthetic audio
-- Once recorded, transcripts are committed to git so CI never needs real API keys
+- Audio fixtures are synthetic only.
+- Text content is fictional business dialogue, not real meeting content.
+- Names are fictional placeholders such as `Pierre`, `Sophie`, and `Alice`.
+- Transcript and extraction fixtures, if recorded, must come only from synthetic audio.
+- Secrets, caches, checkpoints, and user recordings are never valid fixture data.
 
-## Content of fr_meeting_5min fixture
+## Content of `fr_meeting_5min`
 
-A 5-minute synthetic French meeting about a product launch:
+A short French meeting about a product launch:
 
 | Time | Speaker | Content |
 |------|---------|---------|
@@ -76,20 +90,30 @@ A 5-minute synthetic French meeting about a product launch:
 | 1:50 | Sophie | Confirms decision |
 | 2:10 | Pierre | Assigns checklist review to Sophie |
 | 2:30 | Sophie | **Commitment: checklist by next Friday** |
-| 3:00 | Pierre | Discusses Q2 roadmap |
 | 4:00 | Sophie | **Rejection: March launch not feasible** |
 | 4:30 | Pierre | **Open question: database migration owner?** |
-| 5:00 | Both   | Closing remarks |
 
-## Content of bilingual_meeting_5min fixture
+## Content of `bilingual_meeting_5min`
 
-A 5-minute FR/EN code-switching meeting:
+A short FR/EN code-switching meeting:
 
 | Time | Speaker | Language | Content |
 |------|---------|----------|---------|
 | 0:00 | Pierre | FR | Opens in French |
 | 0:30 | Pierre | FR→EN | Code-switch: Python SDK discussion |
 | 1:10 | Alice | EN | English-only response |
-| 1:50 | Pierre | FR | **Decision: adopt Python SDK** |
-| 2:20 | Pierre | EN | Assigns migration guide to Alice (English) |
+| 1:50 | Pierre | EN | **Decision: adopt Python SDK** |
+| 2:20 | Pierre | EN | Assigns migration guide to Alice |
 | 2:50 | Alice | EN | **Commitment: guide by EOW** |
+
+## Content of `earnings_call_45min`
+
+A synthetic stress fixture that repeats a fictional investor-relations pattern:
+
+- English-led earnings-call framing with French-compatible code paths
+- repeated launch-date decisions (`May 15`) to test extraction stability
+- repeated investor-deck commitments with a mix of explicit and relative deadlines
+- enough dialogue turns to exercise multi-chunk transcription and assembly behavior
+
+The exact spoken lines are written to `tests/fixtures/earnings_call_45min.mp3.script.txt`
+whenever the fixture is generated.

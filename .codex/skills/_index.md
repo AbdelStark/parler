@@ -9,6 +9,7 @@ Observed existing repo-local skills before this pass: none.
 | Contract Reconciliation | `contract-reconciliation.md` | spec drift, import drift, canonical docs vs tests, RFC mismatch, dependency mismatch | Core |
 | Vertical Slice Implementation | `vertical-slice-implementation.md` | create `parler/`, phase work, bootstrap modules, test-backed build-out | Core |
 | Test-Driven Delivery | `test-driven-delivery.md` | pytest, BDD, property tests, coverage, mutation, benchmark, fixture use | Core |
+| Fixture Generation | `fixture-generation.md` | synthetic audio, E2E fixtures, benchmark baseline, live verification assets | Core |
 | Mistral Pipeline | `mistral-pipeline.md` | Voxtral, Mistral, transcription, extraction, cache, retry, parser, quality | Core |
 | Rendering and Export | `rendering-and-export.md` | report rendering, html, markdown, json, notion, linear, jira, slack | Core |
 | Orchestrator and CLI | `orchestrator-and-cli.md` | `ProcessingState`, checkpoint, resume, exit codes, `parler process`, `parler cache` | Core |
@@ -17,8 +18,9 @@ Observed existing repo-local skills before this pass: none.
 
 1. Use `contract-reconciliation.md` first when sources disagree.
 2. Use `vertical-slice-implementation.md` when creating or extending runtime code.
-3. Load a domain skill (`mistral-pipeline.md`, `rendering-and-export.md`, or `orchestrator-and-cli.md`) for implementation details.
-4. Load `test-driven-delivery.md` before widening verification or adding tests.
+3. Load `fixture-generation.md` for synthetic asset creation, vendor recording, or benchmark-baseline work.
+4. Load a domain skill (`mistral-pipeline.md`, `rendering-and-export.md`, or `orchestrator-and-cli.md`) for implementation details.
+5. Load `test-driven-delivery.md` before widening verification or adding tests.
 
 ## Current Gap Analysis
 
@@ -30,15 +32,14 @@ High-priority gaps addressed in this pass:
 - No release/packaging baseline for `uv`-based development and publishing
 
 Lower-priority recommended skills not scaffolded yet:
-- [ ] `fixture-generation.md` — add if synthetic fixture generation becomes recurring work
 - [ ] `security-review.md` — add before handling real transcript/checkpoint data
 
 ## Known Baseline Risks
 
-- Phase 1 through Phase 7 core surfaces exist in the runtime package. The main remaining later domains are fixture-backed E2E coverage, benchmark baselines, and any CLI/export edge-case wiring uncovered by those higher-level runs.
-- E2E fixture assets listed in `tests/fixtures/README.md` are not committed yet.
+- Phase 1 through Phase 7 core runtime surfaces exist and the Phase 8 verification scaffold is now present. The remaining later domains are live fixture provisioning, reviewed vendor-output commits if desired, and any CLI/export edge-case wiring uncovered by those higher-level runs.
+- Fresh clones still may not contain generated audio or recorded vendor outputs even though the fixture scripts, placeholder directories, and decision-log baselines are committed.
 - Tests and docs still drift on module names: `assembly` vs `assembler` and `util` vs `utils`; `attribution` vs `transcription.attributor` is now covered by a compatibility shim.
 - `ruff check tests/` still surfaces a wider backlog in untouched benchmark/E2E/integration files; current CI/fast verification intentionally stays scoped to `parler` plus `tests/smoke_test.py`.
-- `PipelineConfig` compatibility is currently provided by aliasing `ParlerConfig`.
+- `PipelineConfig` compatibility is provided by a dedicated legacy wrapper that normalizes into `ParlerConfig`.
 - `uv`, `uv_build`, `PyYAML`, and `requests` are now declared and validated; keep future tooling changes inside the same packaging model.
-- The implemented Phase 1-7 slice is green locally; widen CI deliberately rather than pointing it at the whole `tests/` tree.
+- The implemented fast slice, compatibility layer, and benchmarks are green locally; widen CI deliberately rather than pointing it at the whole `tests/` tree.

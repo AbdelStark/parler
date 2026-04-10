@@ -1,0 +1,6 @@
+Pierre. Bonjour, on commence la reunion.
+Pierre. So, regarding the Python SDK, je pense qu'on devrait l'adopter.
+Alice. Agreed. The SDK approach is cleaner than direct API calls.
+Pierre. On a decide. We are going with the Python SDK approach.
+Pierre. Alice, can you prepare the migration guide by E O W ?
+Alice. Sure. I'll have it ready by Friday.

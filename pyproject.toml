@@ -55,9 +55,11 @@ test = [
     "pytest-httpx>=0.35.0",
     "hypothesis>=6.100",      # property-based testing
     "freezegun>=1.4",         # deterministic time in tests
+    "jsonschema>=4.0",        # schema validation for export/E2E tests
     "respx>=0.20",            # HTTP mock for httpx
     "responses>=0.25.0",      # HTTP mock for requests
     "factory-boy>=3.3",       # fixture factories
+    "gTTS>=2.5.4",            # synthetic audio fixture generation
 ]
 lint = [
     "ruff>=0.4",              # linting
@@ -86,6 +88,7 @@ diarize = [
 
 [project.scripts]
 parler = "parler.cli:main"
+parler-e2e = "parler.e2e:main"
 
 [tool.uv]
 default-groups = ["dev"]

@@ -114,6 +114,7 @@ class PipelineOrchestrator:
                 max_chunk_s=self.config.chunking.max_chunk_s,
                 max_retries=self.config.transcription.max_retries,
                 cache=transcript_cache,
+                timeout_ms=self.config.transcription.timeout_s * 1000,
             )
             transcript = self._run_stage(
                 PipelineStage.TRANSCRIBE,
