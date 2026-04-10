@@ -15,6 +15,8 @@ def load_env_file(path: Path) -> None:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
         name, value = line.split("=", 1)
         key = name.strip()
         if not key:

@@ -43,7 +43,7 @@ dependencies = [
 Homepage = "https://github.com/AbdelStark/parler"
 Repository = "https://github.com/AbdelStark/parler"
 Issues = "https://github.com/AbdelStark/parler/issues"
-Changelog = "https://github.com/AbdelStark/parler/releases"
+Changelog = "https://github.com/AbdelStark/parler/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 test = [
@@ -197,7 +197,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S105", "S106"]  # allow assert, hardcoded passwords in tests
+"tests/*" = ["N806", "S101", "S105", "S106"]  # test doubles use patched-class naming
 
 # ─── Mypy ────────────────────────────────────────────────────────────────────
 

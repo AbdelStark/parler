@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from ..attribution.attributor import SpeakerAttributor
 from ..audio.ingester import AudioIngester
@@ -19,10 +20,64 @@ from ..transcription.cache import TranscriptCache
 from ..transcription.transcriber import VoxtralTranscriber
 from .state import PipelineStage, ProcessingState, load_processing_state, save_processing_state
 
+_TRANSCRIPTION_PRICING_PER_MINUTE = {
+    "voxtral-mini": 0.003,
+    "voxtral-small": 0.006,
+}
+_TEXT_MODEL_PRICING_PER_MILLION = {
+    "mistral-medium": (0.4, 2.0),
+    "mistral-large": (0.5, 1.5),
+}
+_DEFAULT_TRANSCRIPTION_PRICE_PER_MINUTE = 0.006
+_DEFAULT_TEXT_INPUT_PRICE_PER_MILLION = 0.5
+_DEFAULT_TEXT_OUTPUT_PRICE_PER_MILLION = 2.0
+_CONSERVATIVE_TRANSCRIPT_INPUT_TOKENS_PER_MINUTE = 260
+_CONSERVATIVE_EXTRACTION_OUTPUT_TOKENS_PER_PASS = 900
+_CONSERVATIVE_MULTI_PASS_OVERLAP_TOKENS = 256
+
+T = TypeVar("T")
+
+
+def _match_pricing(model: str, table: dict[str, T], default: T) -> T:
+    normalized = model.lower()
+    for prefix, price in table.items():
+        if normalized.startswith(prefix):
+            return price
+    return default
+
 
 def estimate_cost(audio_file: AudioFile, config: ParlerConfig) -> float:
-    del audio_file, config
-    return 0.0
+    minutes = max(audio_file.duration_s / 60.0, 0.0)
+    transcription_price_per_minute = _match_pricing(
+        config.transcription.model,
+        _TRANSCRIPTION_PRICING_PER_MINUTE,
+        _DEFAULT_TRANSCRIPTION_PRICE_PER_MINUTE,
+    )
+    transcription_cost = minutes * transcription_price_per_minute
+
+    estimated_input_tokens = max(
+        math.ceil(minutes * _CONSERVATIVE_TRANSCRIPT_INPUT_TOKENS_PER_MINUTE),
+        1,
+    )
+    pass_count = max(
+        1,
+        math.ceil(estimated_input_tokens / max(config.extraction.multi_pass_threshold, 1)),
+    )
+    overlap_tokens = max(pass_count - 1, 0) * _CONSERVATIVE_MULTI_PASS_OVERLAP_TOKENS
+    priced_input_tokens = estimated_input_tokens + overlap_tokens
+    priced_output_tokens = pass_count * min(
+        config.extraction.max_tokens,
+        _CONSERVATIVE_EXTRACTION_OUTPUT_TOKENS_PER_PASS,
+    )
+    input_price_per_million, output_price_per_million = _match_pricing(
+        config.extraction.model,
+        _TEXT_MODEL_PRICING_PER_MILLION,
+        (_DEFAULT_TEXT_INPUT_PRICE_PER_MILLION, _DEFAULT_TEXT_OUTPUT_PRICE_PER_MILLION),
+    )
+    extraction_cost = (priced_input_tokens / 1_000_000) * input_price_per_million + (
+        priced_output_tokens / 1_000_000
+    ) * output_price_per_million
+    return round(transcription_cost + extraction_cost, 4)
 
 
 class PipelineOrchestrator:
@@ -94,6 +149,12 @@ class PipelineOrchestrator:
 
         if PipelineStage.TRANSCRIBE not in state.completed_stages:
             estimated_cost = estimate_cost(audio_file, self.config)
+            if estimated_cost > self.config.cost.max_usd:
+                raise ProcessingError(
+                    "Estimated API cost "
+                    f"${estimated_cost:.2f} exceeds configured cap "
+                    f"${self.config.cost.max_usd:.2f}"
+                )
             if (
                 estimated_cost > self.config.cost.confirm_above_usd
                 and on_cost_confirm is not None

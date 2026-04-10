@@ -7,9 +7,11 @@
 ```bash
 uv python install
 uv sync --locked --group dev
+cp .env.example .env
 ```
 
-This creates `.venv/` and installs the project in editable mode.
+This creates `.venv/`, installs the project in editable mode, and gives you a
+local environment template for `MISTRAL_API_KEY`.
 
 ## Common commands
 
@@ -22,6 +24,7 @@ uv run python tests/benchmarks/update_baseline.py /tmp/parler-benchmark-raw.json
 uv run python tests/fixtures/generate_fixtures.py --all
 uv run parler-e2e
 uv run parler-e2e tests/e2e/test_full_pipeline_fr.py -q
+uv run parler tui
 uv run python tests/smoke_test.py
 uv run ruff check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
 uv run ruff format --check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
@@ -41,4 +44,5 @@ The wider `tests/`, `features/`, and roadmap modules still contain future-facing
 ## Releases
 
 Releases are built and published with `uv` and GitHub Actions Trusted Publishing.
-See `.github/workflows/publish.yml`.
+See `.github/workflows/publish.yml` and update [CHANGELOG.md](./CHANGELOG.md)
+for every user-visible change.

@@ -19,19 +19,23 @@ Design contract:
   - On resume, completed stages in the checkpoint are replayed from disk
 """
 
-import pytest
 import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call, PropertyMock
+from unittest.mock import patch
 
-from parler.pipeline.orchestrator import PipelineOrchestrator, ProcessingState, PipelineStage
-from parler.models import AudioFile, Transcript, TranscriptSegment, DecisionLog
+import pytest
 from parler.errors import APIError, ProcessingError
-from parler.config import ParlerConfig
-
+from parler.models import AudioFile, DecisionLog, Transcript, TranscriptSegment
+from parler.pipeline.orchestrator import (
+    PipelineOrchestrator,
+    PipelineStage,
+    ProcessingState,
+    estimate_cost,
+)
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
+
 
 def make_audio_file(path="/tmp/meeting.mp3", duration=600.0, content_hash="abc123abc123"):
     return AudioFile(
@@ -48,9 +52,17 @@ def make_audio_file(path="/tmp/meeting.mp3", duration=600.0, content_hash="abc12
 
 def make_segment(id=0, text="Test."):
     return TranscriptSegment(
-        id=id, start_s=float(id * 5), end_s=float((id + 1) * 5),
-        text=text, language="fr", speaker_id=None, speaker_confidence=None,
-        confidence=0.9, no_speech_prob=0.01, code_switch=False, words=None,
+        id=id,
+        start_s=float(id * 5),
+        end_s=float((id + 1) * 5),
+        text=text,
+        language="fr",
+        speaker_id=None,
+        speaker_confidence=None,
+        confidence=0.9,
+        no_speech_prob=0.01,
+        code_switch=False,
+        words=None,
     )
 
 
@@ -66,30 +78,38 @@ def make_transcript(segments=None):
 
 def make_empty_log():
     from parler.models import ExtractionMetadata
+
     return DecisionLog(
-        decisions=(), commitments=(), rejected=(), open_questions=(),
+        decisions=(),
+        commitments=(),
+        rejected=(),
+        open_questions=(),
         metadata=ExtractionMetadata(
-            model="mistral-large-latest", prompt_version="v1.0",
-            meeting_date=date(2026, 4, 9), extracted_at="2026-04-09T10:00:00Z",
-            input_tokens=100, output_tokens=20,
+            model="mistral-large-latest",
+            prompt_version="v1.0",
+            meeting_date=date(2026, 4, 9),
+            extracted_at="2026-04-09T10:00:00Z",
+            input_tokens=100,
+            output_tokens=20,
         ),
     )
 
 
 # ─── Stage sequencing ────────────────────────────────────────────────────────
 
-class TestStageSequencing:
 
+class TestStageSequencing:
     def test_stages_run_in_order(self, parler_config):
         """Stages must always execute in: ingest → transcribe → attribute → extract → render."""
         stage_order = []
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.side_effect = lambda *a, **k: (
                 stage_order.append("ingest") or make_audio_file()
             )
@@ -115,10 +135,11 @@ class TestStageSequencing:
 
     def test_transcribe_only_skips_attribute_extract_render(self, parler_config):
         """With transcribe_only=True, only ingest + transcribe run."""
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
 
@@ -129,12 +150,13 @@ class TestStageSequencing:
 
     def test_no_diarize_skips_attribution_stage(self, parler_config):
         """With no_diarize=True, attribution stage is skipped."""
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
             MockExtractor.return_value.extract.return_value = make_empty_log()
@@ -148,8 +170,8 @@ class TestStageSequencing:
 
 # ─── ProcessingState immutability ────────────────────────────────────────────
 
-class TestProcessingState:
 
+class TestProcessingState:
     def test_processing_state_is_immutable(self):
         """ProcessingState is a frozen dataclass — mutation raises."""
         audio = make_audio_file()
@@ -169,8 +191,12 @@ class TestProcessingState:
         """Each stage transition creates a new ProcessingState, never mutates the prior."""
         audio = make_audio_file()
         state1 = ProcessingState(
-            audio_file=audio, transcript=None, attributed_transcript=None,
-            decision_log=None, report=None, completed_stages=frozenset(),
+            audio_file=audio,
+            transcript=None,
+            attributed_transcript=None,
+            decision_log=None,
+            report=None,
+            completed_stages=frozenset(),
             checkpoint_path=None,
         )
         transcript = make_transcript()
@@ -184,8 +210,12 @@ class TestProcessingState:
         """completed_stages frozenset grows as stages complete."""
         audio = make_audio_file()
         state = ProcessingState(
-            audio_file=audio, transcript=None, attributed_transcript=None,
-            decision_log=None, report=None, completed_stages=frozenset(),
+            audio_file=audio,
+            transcript=None,
+            attributed_transcript=None,
+            decision_log=None,
+            report=None,
+            completed_stages=frozenset(),
             checkpoint_path=None,
         )
         state2 = state.with_transcript(make_transcript())
@@ -195,18 +225,19 @@ class TestProcessingState:
 
 # ─── Checkpoint save and resume ───────────────────────────────────────────────
 
-class TestCheckpointSaveResume:
 
+class TestCheckpointSaveResume:
     def test_checkpoint_written_after_transcription(self, parler_config, tmp_path):
         """A .parler-state.json checkpoint is written after transcription completes."""
         checkpoint_path = tmp_path / ".parler-state.json"
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
             MockAttributor.return_value.attribute.return_value = make_transcript()
@@ -226,12 +257,13 @@ class TestCheckpointSaveResume:
         checkpoint_path = tmp_path / ".parler-state.json"
         transcript = make_transcript([make_segment(0, "Bonjour.")])
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = transcript
             MockAttributor.return_value.attribute.return_value = transcript
@@ -242,13 +274,12 @@ class TestCheckpointSaveResume:
             orchestrator.run(Path("/tmp/meeting.mp3"), checkpoint_path=checkpoint_path)
 
         state = json.loads(checkpoint_path.read_text())
+        assert "audio_file" in state
         assert "transcript" in state
         assert "completed_stages" in state
 
     def test_resume_skips_completed_stages(self, parler_config, tmp_path):
         """On --resume, stages listed in checkpoint.completed_stages are not re-run."""
-        # Build a checkpoint with TRANSCRIBE already completed
-        transcript = make_transcript([make_segment(0, "Pre-cached.")])
         checkpoint_path = tmp_path / ".parler-state.json"
 
         # Write a fake checkpoint
@@ -260,21 +291,34 @@ class TestCheckpointSaveResume:
                 "language": "fr",
                 "duration_s": 5.0,
                 "segments": [
-                    {"id": 0, "start_s": 0.0, "end_s": 5.0, "text": "Pre-cached.",
-                     "language": "fr", "speaker_id": None, "speaker_confidence": None,
-                     "confidence": 0.9, "no_speech_prob": 0.01, "code_switch": False, "words": None}
+                    {
+                        "id": 0,
+                        "start_s": 0.0,
+                        "end_s": 5.0,
+                        "text": "Pre-cached.",
+                        "language": "fr",
+                        "speaker_id": None,
+                        "speaker_confidence": None,
+                        "confidence": 0.9,
+                        "no_speech_prob": 0.01,
+                        "code_switch": False,
+                        "words": None,
+                    }
                 ],
             },
         }
         checkpoint_path.write_text(json.dumps(checkpoint_data))
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
-            MockIngester.return_value.ingest.return_value = make_audio_file(content_hash="abc123abc123")
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
+            MockIngester.return_value.ingest.return_value = make_audio_file(
+                content_hash="abc123abc123"
+            )
             MockAttributor.return_value.attribute.return_value = make_transcript()
             MockExtractor.return_value.extract.return_value = make_empty_log()
             MockRenderer.return_value.render.return_value = "# Report"
@@ -288,6 +332,30 @@ class TestCheckpointSaveResume:
 
         # Transcription should NOT have been called (it was in the checkpoint)
         MockTranscriber.return_value.transcribe.assert_not_called()
+
+    def test_resume_rejects_checkpoint_with_missing_transcript(self, parler_config, tmp_path):
+        """Resume must fail fast when the checkpoint claims a completed stage without data."""
+        checkpoint_path = tmp_path / ".parler-state.json"
+        checkpoint_path.write_text(
+            json.dumps(
+                {
+                    "audio_hash": "abc123abc123",
+                    "completed_stages": ["TRANSCRIBE"],
+                }
+            )
+        )
+
+        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester:
+            MockIngester.return_value.ingest.return_value = make_audio_file(
+                content_hash="abc123abc123"
+            )
+            orchestrator = PipelineOrchestrator(parler_config)
+            with pytest.raises(ProcessingError, match="transcript is missing"):
+                orchestrator.run(
+                    Path("/tmp/meeting.mp3"),
+                    checkpoint_path=checkpoint_path,
+                    resume=True,
+                )
 
     def test_resume_with_wrong_audio_hash_raises(self, parler_config, tmp_path):
         """Resuming with a different audio file (different hash) should raise an error."""
@@ -304,7 +372,7 @@ class TestCheckpointSaveResume:
                 content_hash="different_hash_9999"  # different from checkpoint
             )
             orchestrator = PipelineOrchestrator(parler_config)
-            with pytest.raises(ProcessingError, match="checkpoint.*mismatch|audio.*changed"):
+            with pytest.raises(ProcessingError, match=r"checkpoint.*mismatch|audio.*changed"):
                 orchestrator.run(
                     Path("/tmp/different_meeting.mp3"),
                     checkpoint_path=checkpoint_path,
@@ -314,19 +382,22 @@ class TestCheckpointSaveResume:
 
 # ─── Cost tracking ────────────────────────────────────────────────────────────
 
+
 class TestCostTracking:
+    def test_estimate_cost_returns_positive_value_for_billable_pipeline(self, parler_config):
+        """The default estimator should produce a non-zero conservative value."""
+        assert estimate_cost(make_audio_file(duration=600.0), parler_config) > 0
 
     def test_cost_estimate_computed_before_transcription(self, parler_config):
         """Cost estimate fires before any API call — allows dry-run mode."""
-        cost_estimates = []
-
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockEstimate.return_value = 0.15
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
@@ -347,13 +418,14 @@ class TestCostTracking:
             confirm_calls.append(estimated_cost)
             return True  # user says yes
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockEstimate.return_value = 5.00  # above default threshold of 1.0
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
@@ -372,10 +444,11 @@ class TestCostTracking:
 
     def test_cost_confirmation_refused_aborts_pipeline(self, parler_config):
         """If on_cost_confirm returns False, the pipeline aborts before any API call."""
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockEstimate.return_value = 5.00
 
@@ -388,21 +461,38 @@ class TestCostTracking:
         MockTranscriber.return_value.transcribe.assert_not_called()
         assert result is None or result.transcript is None
 
+    def test_cost_above_max_budget_raises_processing_error(self, parler_config):
+        """The hard budget cap must abort before the first billable stage."""
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.estimate_cost") as MockEstimate,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+        ):
+            MockIngester.return_value.ingest.return_value = make_audio_file()
+            MockEstimate.return_value = 9.00  # fixture max_usd=5.0
+
+            orchestrator = PipelineOrchestrator(parler_config)
+            with pytest.raises(ProcessingError, match="exceeds configured cap"):
+                orchestrator.run(Path("/tmp/meeting.mp3"))
+
+        MockTranscriber.return_value.transcribe.assert_not_called()
+
 
 # ─── Progress reporting ───────────────────────────────────────────────────────
 
-class TestProgressReporting:
 
+class TestProgressReporting:
     def test_on_stage_start_called_for_each_stage(self, parler_config):
         """on_stage_start callback is called once per pipeline stage."""
         started_stages = []
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
             MockAttributor.return_value.attribute.return_value = make_transcript()
@@ -415,19 +505,19 @@ class TestProgressReporting:
                 on_stage_start=lambda stage: started_stages.append(stage),
             )
 
-        stage_names = {s.name if hasattr(s, "name") else str(s) for s in started_stages}
         assert len(started_stages) >= 4  # ingest, transcribe, attribute, extract, render
 
     def test_on_stage_complete_called_with_duration(self, parler_config):
         """on_stage_complete callback is called with (stage, duration_s) after each stage."""
         completions = []
 
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
             MockAttributor.return_value.attribute.return_value = make_transcript()
@@ -441,23 +531,24 @@ class TestProgressReporting:
             )
 
         assert len(completions) >= 4
-        for stage, duration in completions:
+        for _stage, duration in completions:
             assert isinstance(duration, float)
             assert duration >= 0.0
 
 
 # ─── Error isolation ──────────────────────────────────────────────────────────
 
-class TestErrorIsolation:
 
+class TestErrorIsolation:
     def test_attribution_failure_does_not_abort_extraction(self, parler_config):
         """If attribution raises a non-fatal ProcessingError, extraction still runs."""
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber, \
-             patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor, \
-             patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor, \
-             patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+            patch("parler.pipeline.orchestrator.SpeakerAttributor") as MockAttributor,
+            patch("parler.pipeline.orchestrator.DecisionExtractor") as MockExtractor,
+            patch("parler.pipeline.orchestrator.ReportRenderer") as MockRenderer,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.return_value = make_transcript()
             MockAttributor.return_value.attribute.side_effect = ProcessingError(
@@ -475,9 +566,10 @@ class TestErrorIsolation:
 
     def test_transcription_api_error_aborts_pipeline(self, parler_config):
         """An APIError during transcription aborts the whole pipeline."""
-        with patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester, \
-             patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber:
-
+        with (
+            patch("parler.pipeline.orchestrator.AudioIngester") as MockIngester,
+            patch("parler.pipeline.orchestrator.VoxtralTranscriber") as MockTranscriber,
+        ):
             MockIngester.return_value.ingest.return_value = make_audio_file()
             MockTranscriber.return_value.transcribe.side_effect = APIError(
                 "Rate limit exceeded after 3 retries"

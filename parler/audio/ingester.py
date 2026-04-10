@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
 import wave
+from contextlib import suppress
 from pathlib import Path
 
 from ..errors import EnvironmentError, InputError
@@ -14,6 +17,7 @@ _NATIVE_EXTENSIONS = {"mp3", "wav", "ogg", "flac", "m4a", "webm"}
 _FFMPEG_EXTENSIONS = {"mkv", "mp4", "mov", "avi", "ts"}
 _MAX_FILE_SIZE_BYTES = 4 * 1024**3
 _INSTALL_HINT = "Install FFmpeg via `brew install ffmpeg` or `apt install ffmpeg`."
+_TEMP_AUDIO_DIR = Path(tempfile.gettempdir()) / "parler-audio"
 
 
 def _read_header(path: Path, size: int = 32) -> bytes:
@@ -94,6 +98,29 @@ def _detect_format(path: Path) -> tuple[str, bool]:
 def _probe_audio(path: Path) -> dict[str, float | int]:
     try:
         return probe_audio(path)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip()
+        lowered = detail.lower()
+        if any(
+            marker in lowered
+            for marker in ("library not loaded", "symbol not found", "image not found")
+        ):
+            raise EnvironmentError(
+                f"ffprobe failed while probing {path.name}. {_INSTALL_HINT}"
+            ) from exc
+        if path.suffix.lower() == ".wav":
+            with wave.open(str(path), "rb") as handle:
+                rate = handle.getframerate()
+                frames = handle.getnframes()
+                return {
+                    "duration": frames / rate if rate else 0.0,
+                    "sample_rate": rate,
+                    "channels": handle.getnchannels(),
+                }
+        detail_suffix = f": {detail}" if detail else ""
+        raise InputError(f"Unable to read audio metadata from {path.name}{detail_suffix}") from exc
+    except FileNotFoundError as exc:
+        raise EnvironmentError(f"ffprobe is unavailable. {_INSTALL_HINT}") from exc
     except Exception:
         if path.suffix.lower() == ".wav":
             with wave.open(str(path), "rb") as handle:
@@ -108,8 +135,30 @@ def _probe_audio(path: Path) -> dict[str, float | int]:
 
 
 def _convert_with_ffmpeg(source: Path) -> Path:
-    destination = source.with_name(f"{source.stem}_converted.wav")
-    return convert_with_ffmpeg(source, destination)
+    _TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    stat = source.stat()
+    destination = _TEMP_AUDIO_DIR / f"{source.stem}-{stat.st_mtime_ns}-{stat.st_size}.wav"
+    if destination.exists() and destination.stat().st_size > 0:
+        return destination
+    try:
+        converted = convert_with_ffmpeg(source, destination)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip()
+        lowered = detail.lower()
+        if any(
+            marker in lowered
+            for marker in ("library not loaded", "symbol not found", "image not found")
+        ):
+            raise EnvironmentError(
+                f"FFmpeg failed while decoding {source.name}. {_INSTALL_HINT}"
+            ) from exc
+        detail_suffix = f": {detail}" if detail else ""
+        raise InputError(f"FFmpeg could not decode {source.name}{detail_suffix}") from exc
+    except FileNotFoundError as exc:
+        raise EnvironmentError(f"FFmpeg is unavailable. {_INSTALL_HINT}") from exc
+    with suppress(OSError):
+        converted.chmod(0o600)
+    return converted
 
 
 class AudioIngester:

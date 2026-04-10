@@ -19,6 +19,7 @@ from .pipeline.orchestrator import estimate_cost
 from .pipeline.state import load_processing_state, save_processing_state
 from .rendering.renderer import OutputFormat, RenderConfig, ReportRenderer
 from .transcription.cache import TranscriptCache
+from .util.env import DEFAULT_ENV_FILE, apply_api_key_aliases, load_env_file
 from .util.serialization import to_jsonable
 
 
@@ -529,6 +530,8 @@ def tui(project_root: Path | None) -> None:
 
 def main() -> None:
     try:
+        load_env_file(Path.cwd() / DEFAULT_ENV_FILE)
+        apply_api_key_aliases()
         cli.main(prog_name="parler", standalone_mode=False)
     except click.ClickException as exc:
         exc.show()

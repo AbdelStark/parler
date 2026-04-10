@@ -394,8 +394,9 @@ class ParlerTUIApp(App[None]):
                                 yield Label("Pipeline notes", classes="field-label")
                                 yield Static(
                                     "Use a config file for advanced knobs like retries, chunking, "
-                                    "cost budgets, and export behavior. The TUI overrides the visible "
-                                    "fields here and keeps everything else from config/env.",
+                                    "cost budgets, and export behavior. API keys load automatically "
+                                    "from .env via MISTRAL_API_KEY or PARLER_API_KEY; the visible "
+                                    "fields here override only the explicit run inputs.",
                                     id="form-help",
                                 )
                         yield Static("Run mode", classes="section-title compact")
@@ -1009,7 +1010,9 @@ class ParlerTUIApp(App[None]):
             )
         else:
             self.query_one("#run-summary", Static).update(
-                "Ready for a run.\nChoose a fixture or point at your own audio."
+                "Ready for a run.\n"
+                "Choose a fixture or point at your own audio.\n"
+                "If API access is missing, add MISTRAL_API_KEY to .env."
             )
 
     def _write_log(self, message: str) -> None:
@@ -1029,7 +1032,12 @@ class ParlerTUIApp(App[None]):
             tone="good" if api_ready == "Ready" else "warn",
         )
         self._set_topbar_pill("#topbar-mode", "Idle", tone="quiet")
-        self._set_metric("#metric-api", "API key", api_ready, "env / config")
+        self._set_metric(
+            "#metric-api",
+            "API key",
+            api_ready,
+            ".env -> MISTRAL_API_KEY or parler.toml api_key",
+        )
         self._set_metric("#metric-audio", "Audio", "No file", "select or load a fixture")
         self._set_metric("#metric-decisions", "Decisions", "0", "awaiting extraction")
         self._set_metric("#metric-commitments", "Commitments", "0", "awaiting extraction")

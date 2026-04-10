@@ -61,6 +61,21 @@ class ProcessingState:
         return self._with_stage(PipelineStage.RENDER, report=report)
 
 
+def _audio_file_from_dict(data: dict[str, Any]) -> AudioFile:
+    return AudioFile(
+        path=Path(str(data["path"])),
+        original_path=(
+            Path(str(data["original_path"])) if data.get("original_path") is not None else None
+        ),
+        format=str(data["format"]),
+        duration_s=float(data["duration_s"]),
+        sample_rate=int(data["sample_rate"]),
+        channels=int(data["channels"]),
+        size_bytes=int(data["size_bytes"]),
+        content_hash=str(data["content_hash"]),
+    )
+
+
 def _segment_from_dict(data: dict[str, Any]) -> TranscriptSegment:
     return TranscriptSegment(
         id=data["id"],
@@ -180,6 +195,8 @@ def checkpoint_payload(state: ProcessingState) -> dict[str, Any]:
             stage.name for stage in sorted(state.completed_stages, key=lambda item: item.value)
         ],
     }
+    if state.audio_file is not None:
+        payload["audio_file"] = to_jsonable(state.audio_file)
     if state.transcript is not None:
         payload["transcript"] = to_jsonable(state.transcript)
     if state.attributed_transcript is not None:
@@ -198,8 +215,10 @@ def processing_state_from_dict(
     checkpoint_path: Path | None = None,
 ) -> ProcessingState:
     completed = frozenset(PipelineStage[name] for name in data.get("completed_stages", []))
+    payload_audio = data.get("audio_file")
     return ProcessingState(
-        audio_file=audio_file,
+        audio_file=audio_file
+        or (_audio_file_from_dict(payload_audio) if isinstance(payload_audio, dict) else None),
         transcript=transcript_from_dict(data["transcript"]) if data.get("transcript") else None,
         attributed_transcript=(
             transcript_from_dict(data["attributed_transcript"])
@@ -215,6 +234,32 @@ def processing_state_from_dict(
     )
 
 
+def _validate_resumable_state(state: ProcessingState) -> None:
+    completed = state.completed_stages
+
+    if PipelineStage.ATTRIBUTE in completed and PipelineStage.TRANSCRIBE not in completed:
+        raise ProcessingError("checkpoint is inconsistent: ATTRIBUTE completed without TRANSCRIBE")
+    if PipelineStage.EXTRACT in completed and PipelineStage.TRANSCRIBE not in completed:
+        raise ProcessingError("checkpoint is inconsistent: EXTRACT completed without TRANSCRIBE")
+    if PipelineStage.RENDER in completed and PipelineStage.EXTRACT not in completed:
+        raise ProcessingError("checkpoint is inconsistent: RENDER completed without EXTRACT")
+
+    if PipelineStage.TRANSCRIBE in completed and state.transcript is None:
+        raise ProcessingError(
+            "checkpoint is inconsistent: TRANSCRIBE completed but transcript is missing"
+        )
+    if PipelineStage.ATTRIBUTE in completed and state.attributed_transcript is None:
+        raise ProcessingError(
+            "checkpoint is inconsistent: ATTRIBUTE completed but attributed transcript is missing"
+        )
+    if PipelineStage.EXTRACT in completed and state.decision_log is None:
+        raise ProcessingError(
+            "checkpoint is inconsistent: EXTRACT completed but decision log is missing"
+        )
+    if PipelineStage.RENDER in completed and state.report is None:
+        raise ProcessingError("checkpoint is inconsistent: RENDER completed but report is missing")
+
+
 def load_processing_state(
     checkpoint_path: Path,
     *,
@@ -223,9 +268,17 @@ def load_processing_state(
 ) -> ProcessingState:
     raw = read_json(checkpoint_path)
     checkpoint_hash = raw.get("audio_hash")
-    if expected_audio_hash and checkpoint_hash and checkpoint_hash != expected_audio_hash:
-        raise ProcessingError("checkpoint audio changed or mismatch detected")
-    return processing_state_from_dict(raw, audio_file=audio_file, checkpoint_path=checkpoint_path)
+    if expected_audio_hash is not None:
+        if not checkpoint_hash:
+            raise ProcessingError(
+                "checkpoint is missing its audio hash and cannot be resumed safely"
+            )
+        if checkpoint_hash != expected_audio_hash:
+            raise ProcessingError("checkpoint audio changed or mismatch detected")
+
+    state = processing_state_from_dict(raw, audio_file=audio_file, checkpoint_path=checkpoint_path)
+    _validate_resumable_state(state)
+    return state
 
 
 def save_processing_state(checkpoint_path: Path, state: ProcessingState) -> None:

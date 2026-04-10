@@ -15,17 +15,22 @@ Design contract:
   - Raises EnvironmentError (exit_code=3) for missing FFmpeg on container formats
 """
 
-import pytest
 import hashlib
+import subprocess
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from parler.audio.ingester import AudioIngester, AudioFile
-from parler.errors import InputError, EnvironmentError
+from unittest.mock import MagicMock, patch
 
+import pytest
+from parler.audio.ingester import AudioIngester, _convert_with_ffmpeg
+from parler.errors import EnvironmentError, InputError
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-def make_tmp_audio(tmp_path: Path, name: str, content: bytes = b"RIFF\x00\x00\x00\x00WAVEfmt ") -> Path:
+
+def make_tmp_audio(
+    tmp_path: Path, name: str, content: bytes = b"RIFF\x00\x00\x00\x00WAVEfmt "
+) -> Path:
     """Write a fake audio file with recognisable magic bytes."""
     p = tmp_path / name
     p.write_bytes(content)
@@ -34,8 +39,8 @@ def make_tmp_audio(tmp_path: Path, name: str, content: bytes = b"RIFF\x00\x00\x0
 
 # ─── Supported formats ───────────────────────────────────────────────────────
 
-class TestSupportedFormats:
 
+class TestSupportedFormats:
     def test_mp3_file_accepted(self, tmp_path):
         """ID3v2 header magic: 0x49 0x44 0x33"""
         f = make_tmp_audio(tmp_path, "meeting.mp3", b"ID3\x04\x00\x00" + b"\x00" * 100)
@@ -78,21 +83,25 @@ class TestSupportedFormats:
 
 # ─── FFmpeg-required formats ──────────────────────────────────────────────────
 
-class TestFFmpegFormats:
 
+class TestFFmpegFormats:
     def test_mkv_without_ffmpeg_raises_environment_error(self, tmp_path):
         f = make_tmp_audio(tmp_path, "meeting.mkv", b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
-        with patch("parler.audio.ingester.ffmpeg_available", return_value=False):
-            with pytest.raises(EnvironmentError, match="FFmpeg required for .mkv"):
-                AudioIngester().ingest(f)
+        with (
+            patch("parler.audio.ingester.ffmpeg_available", return_value=False),
+            pytest.raises(EnvironmentError, match=r"FFmpeg required for \.mkv"),
+        ):
+            AudioIngester().ingest(f)
 
     def test_mkv_with_ffmpeg_converts_and_succeeds(self, tmp_path):
         f = make_tmp_audio(tmp_path, "meeting.mkv", b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
         converted = tmp_path / "meeting_converted.wav"
         converted.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
-        with patch("parler.audio.ingester.ffmpeg_available", return_value=True), \
-             patch("parler.audio.ingester._convert_with_ffmpeg", return_value=converted), \
-             patch("parler.audio.ingester._probe_audio") as mock_probe:
+        with (
+            patch("parler.audio.ingester.ffmpeg_available", return_value=True),
+            patch("parler.audio.ingester._convert_with_ffmpeg", return_value=converted),
+            patch("parler.audio.ingester._probe_audio") as mock_probe,
+        ):
             mock_probe.return_value = {"duration": 600.0, "sample_rate": 44100, "channels": 2}
             result = AudioIngester().ingest(f)
         assert result.path == converted
@@ -100,24 +109,55 @@ class TestFFmpegFormats:
 
     def test_mp4_without_ffmpeg_raises_environment_error(self, tmp_path):
         f = make_tmp_audio(tmp_path, "meeting.mp4", b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100)
-        with patch("parler.audio.ingester.ffmpeg_available", return_value=False):
-            with pytest.raises(EnvironmentError, match="FFmpeg required for .mp4"):
-                AudioIngester().ingest(f)
+        with (
+            patch("parler.audio.ingester.ffmpeg_available", return_value=False),
+            pytest.raises(EnvironmentError, match=r"FFmpeg required for \.mp4"),
+        ):
+            AudioIngester().ingest(f)
 
     def test_ffmpeg_error_raises_with_install_hint(self, tmp_path):
         """When FFmpeg is missing, error message must include install instructions."""
         f = make_tmp_audio(tmp_path, "meeting.mkv", b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
-        with patch("parler.audio.ingester.ffmpeg_available", return_value=False):
-            with pytest.raises(EnvironmentError) as exc_info:
-                AudioIngester().ingest(f)
+        with (
+            patch("parler.audio.ingester.ffmpeg_available", return_value=False),
+            pytest.raises(EnvironmentError) as exc_info,
+        ):
+            AudioIngester().ingest(f)
         msg = str(exc_info.value)
         assert "brew install ffmpeg" in msg or "apt install ffmpeg" in msg
+
+    def test_conversion_writes_to_temp_area_not_source_directory(self, tmp_path):
+        f = make_tmp_audio(tmp_path, "meeting.mkv", b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
+
+        def fake_convert(source: Path, destination: Path) -> Path:
+            destination.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+            return destination
+
+        with patch("parler.audio.ingester.convert_with_ffmpeg", side_effect=fake_convert):
+            converted = _convert_with_ffmpeg(f)
+
+        assert converted.parent != tmp_path
+        assert str(converted).startswith(str(Path(tempfile.gettempdir())))
+
+    def test_ffmpeg_decode_failure_raises_input_error(self, tmp_path):
+        f = make_tmp_audio(tmp_path, "meeting.mkv", b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
+        error = subprocess.CalledProcessError(
+            1,
+            ["ffmpeg"],
+            stderr="Invalid data found when processing input",
+        )
+        with (
+            patch("parler.audio.ingester.ffmpeg_available", return_value=True),
+            patch("parler.audio.ingester.convert_with_ffmpeg", side_effect=error),
+            pytest.raises(InputError, match="could not decode"),
+        ):
+            AudioIngester().ingest(f)
 
 
 # ─── File validation ──────────────────────────────────────────────────────────
 
-class TestFileValidation:
 
+class TestFileValidation:
     def test_missing_file_raises_input_error(self, tmp_path):
         nonexistent = tmp_path / "nonexistent.mp3"
         with pytest.raises(InputError, match="File not found"):
@@ -154,11 +194,24 @@ class TestFileValidation:
         with pytest.raises(InputError, match="Unsupported format"):
             AudioIngester().ingest(f)
 
+    def test_metadata_probe_failure_raises_typed_input_error(self, tmp_path):
+        f = make_tmp_audio(tmp_path, "meeting.mp3", b"ID3\x04\x00\x00" + b"\x00" * 100)
+        error = subprocess.CalledProcessError(
+            1,
+            ["ffprobe"],
+            stderr="Invalid data found when processing input",
+        )
+        with (
+            patch("parler.audio.ingester.probe_audio", side_effect=error),
+            pytest.raises(InputError, match="Unable to read audio metadata"),
+        ):
+            AudioIngester().ingest(f)
+
 
 # ─── AudioFile properties ─────────────────────────────────────────────────────
 
-class TestAudioFileProperties:
 
+class TestAudioFileProperties:
     def test_duration_extracted_from_probe(self, tmp_path):
         f = make_tmp_audio(tmp_path, "meeting.mp3", b"ID3\x04\x00\x00" + b"\x00" * 100)
         with patch("parler.audio.ingester._probe_audio") as mock_probe:
@@ -190,7 +243,7 @@ class TestAudioFileProperties:
         assert result.content_hash == expected_hash
 
     def test_content_hash_same_content_same_hash(self, tmp_path):
-        content = b"ID3\x04\x00\x00" + b"\xAB" * 200
+        content = b"ID3\x04\x00\x00" + b"\xab" * 200
         f1 = make_tmp_audio(tmp_path, "a.mp3", content)
         f2 = make_tmp_audio(tmp_path, "b.mp3", content)
         with patch("parler.audio.ingester._probe_audio") as mock_probe:
@@ -220,8 +273,8 @@ class TestAudioFileProperties:
 
 # ─── Size limits ─────────────────────────────────────────────────────────────
 
-class TestSizeLimits:
 
+class TestSizeLimits:
     def test_file_size_reported_correctly(self, tmp_path):
         content = b"ID3\x04\x00\x00" + b"\x00" * 1024
         f = make_tmp_audio(tmp_path, "meeting.mp3", content)
@@ -236,7 +289,7 @@ class TestSizeLimits:
         # Don't actually write 4 GB — mock stat instead
         f.write_bytes(b"ID3\x04\x00\x00" + b"\x00" * 100)
         with patch("pathlib.Path.stat") as mock_stat:
-            mock_stat.return_value = MagicMock(st_size=4 * 1024 ** 3 + 1)
+            mock_stat.return_value = MagicMock(st_size=4 * 1024**3 + 1)
             with pytest.raises(InputError, match="exceeds 4 GB"):
                 AudioIngester().ingest(f)
 
@@ -244,9 +297,11 @@ class TestSizeLimits:
         """Exactly 4 GB should not trigger the size guard."""
         f = tmp_path / "big.mp3"
         f.write_bytes(b"ID3\x04\x00\x00" + b"\x00" * 100)
-        four_gb = 4 * 1024 ** 3
-        with patch("pathlib.Path.stat") as mock_stat, \
-             patch("parler.audio.ingester._probe_audio") as mock_probe:
+        four_gb = 4 * 1024**3
+        with (
+            patch("pathlib.Path.stat") as mock_stat,
+            patch("parler.audio.ingester._probe_audio") as mock_probe,
+        ):
             mock_stat.return_value = MagicMock(st_size=four_gb)
             mock_probe.return_value = {"duration": 10.0, "sample_rate": 44100, "channels": 2}
             result = AudioIngester().ingest(f)

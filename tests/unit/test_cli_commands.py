@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
-from parler.cli import cli
+from parler.cli import cli, main
 from parler.config import CacheConfig, OutputConfig, ParlerConfig
 from parler.models import (
     AudioFile,
@@ -291,3 +292,25 @@ class TestCacheCommands:
 
         assert clear_result.exit_code == 0
         assert not any(cache_dir.glob("*.json"))
+
+
+class TestCliMain:
+    def test_main_loads_dotenv_before_invoking_click(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("MISTRAL_API_KEY=dotenv-key\n", encoding="utf-8")
+
+        previous = dict(os.environ)
+        try:
+            os.environ.pop("MISTRAL_API_KEY", None)
+
+            with (
+                patch("pathlib.Path.cwd", return_value=tmp_path),
+                patch("parler.cli.cli.main", return_value=None) as mock_click_main,
+            ):
+                main()
+
+            assert os.environ["MISTRAL_API_KEY"] == "dotenv-key"
+            mock_click_main.assert_called_once()
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)

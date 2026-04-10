@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from contextlib import suppress
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -31,13 +33,28 @@ def to_json(value: Any, *, indent: int = 2, sort_keys: bool = False) -> str:
     return json.dumps(to_jsonable(value), indent=indent, sort_keys=sort_keys, ensure_ascii=False)
 
 
+def _restrict_permissions(path: Path) -> None:
+    with suppress(OSError):
+        path.chmod(0o600)
+
+
 def write_json_atomic(path: Path, value: Any, *, indent: int = 2, sort_keys: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = to_json(value, indent=indent, sort_keys=sort_keys)
-    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
-        handle.write(payload)
-        temp_path = Path(handle.name)
-    temp_path.replace(path)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+            temp_path = Path(handle.name)
+            _restrict_permissions(temp_path)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.replace(path)
+        _restrict_permissions(path)
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 def read_json(path: Path) -> Any:

@@ -27,6 +27,8 @@
 - Repository status on `2026-04-09`: implementation in progress, not implementation-complete.
 - Phase 1 through Phase 7 core surfaces are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, stable Markdown/HTML/JSON rendering, explicit pipeline state/checkpoint helpers, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, export adapters, canonical CLI commands, prompt scaffolding, and compatibility shims.
 - Phase 8 verification scaffolding is now present: legacy `PipelineConfig` compatibility, synthetic fixture generation/recording scripts, placeholder fixture directories, benchmark baseline support, a manual GitHub Actions workflow for live E2E/benchmark runs, and a first-class Textual TUI surface.
+- `.env.example` and `CHANGELOG.md` now exist as first-class repo surfaces; CLI, TUI, and `parler-e2e` auto-load `.env` from the current project root.
+- Checkpoints now serialize audio metadata as well as the audio hash, resume rejects incomplete or inconsistent checkpoint payloads, and local cache/checkpoint JSON writes use restrictive permissions where the host platform allows them.
 - Remaining unfinished work is now mostly live-asset provisioning and higher-level hardening, not missing core pipeline stages.
 - The deadline test drift from earlier Phase 5 work is reconciled locally: the suite now treats `2026-04-09` as Thursday, which matches the implemented resolver and the broader parametrized/property contract.
 - CI and publishing workflows now exist under `.github/workflows/`.
@@ -110,6 +112,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 |---|---|---|---|
 | Read canonical headings | `rg -n "^## |^### " SPEC.md SDD.md TESTING.md IMPLEMENTATION_PLAN.md` | now | fastest orientation pass |
 | Sync dev env | `uv sync --locked --group dev` | now | installs editable package and pinned dev toolchain |
+| Seed local env | `cp .env.example .env` | now | fill in `MISTRAL_API_KEY`; CLI/TUI/E2E auto-load `.env` from the project root |
 | Focused unit slice | `uv run pytest tests/unit/test_config_loading.py -q` | now | Phase 1 anchor |
 | Focused extraction core | `uv run pytest tests/unit/test_decision_extraction_parsing.py tests/property/test_parsing_properties.py tests/integration/test_mistral_extraction.py -q` | now | green on current implementation |
 | Compatibility surface | `uv run pytest tests/unit/test_pipeline_config_compat.py -q` | now | proves legacy E2E config still normalizes into `ParlerConfig` |
@@ -243,6 +246,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | `ruff check tests/` reports many issues outside CI scope | benchmark/E2E/integration test backlog predates the implemented verification slice | keep CI/fast verification on `parler` + `tests/smoke_test.py` until you deliberately widen test lint scope |
 | `ModuleNotFoundError: parler.utils.retry` | tests import `utils`, design docs say `util` | expose `parler/utils/` shim or normalize references in one coordinated pass |
 | `ConfigError: api_key` or CLI exit code `3` | `MISTRAL_API_KEY` / `PARLER_API_KEY` missing | set one env var; never hardcode the key |
+| Resume fails before work starts with a checkpoint consistency error | checkpoint claims completed stages without the required serialized artefacts | regenerate the checkpoint or rerun without `--resume`; do not hand-edit checkpoint JSON |
 | E2E fixture audio or transcript JSON missing | fresh clone only has placeholder directories and committed baselines | generate synthetic fixtures per `tests/fixtures/README.md`, record fixtures deliberately, or skip E2E |
 | Export side effect failed after local render succeeded | remote Notion/Linear/Jira/Slack call failed but local report generation should still succeed | preserve local outputs, inspect `ExportResult.error`, and retry the adapter independently |
 
@@ -297,6 +301,8 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
     - `2026-04-09`: packaging, locking, build, and publishing are standardized on `uv` / `uv_build`; avoid mixing `pip`, Hatch, Poetry, or ad hoc release commands.
     - `2026-04-09`: report rendering and export adapters are separate concerns: renderer logic owns canonical local artifacts, and exporter failures must degrade to `ExportResult` errors without invalidating local output.
     - `2026-04-09`: checkpoint/state parsing is a first-class module in `parler/pipeline/state.py`; CLI rerender/extract flows should load canonical state from disk instead of re-deriving it ad hoc.
+    - `2026-04-10`: cost gating is now conservative instead of fake: preflight estimates use built-in model pricing assumptions plus configured extraction ceilings, and `cost.max_usd` is enforced before the first billable stage.
+    - `2026-04-10`: normalized audio, caches, and checkpoints are local sensitive artifacts; writes should stay atomic and use restrictive permissions where the platform allows them.
     - `2026-04-09`: Phase 8 verification stays opt-in for live API usage; keep generated audio, recorded transcript/extraction fixtures, and benchmark baselines explicit and reviewable.
   </project_decisions>
 

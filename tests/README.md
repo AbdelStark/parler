@@ -66,7 +66,7 @@ uv run pytest features/ -v
 # Everything except E2E (CI default)
 uv run pytest tests/unit tests/integration tests/property -v --tb=short
 
-# E2E only (requires MISTRAL_API_KEY, costs ~$0.50)
+# E2E only (requires MISTRAL_API_KEY; spend depends on selected models)
 uv run pytest tests/e2e/ -v -s
 
 # Convenient local E2E runner
@@ -103,7 +103,8 @@ uv run python tests/fixtures/generate_fixtures.py --all
 
 ## Test data policy
 
-- Audio fixtures are synthetic (generated with `gtts`, `say`, or `espeak`) — never real meeting recordings
-- Transcripts in `fixtures/transcripts/` are optional real Voxtral responses recorded against synthetic fixture audio
-- No real personal data in any test fixture
-- Fresh clones may only contain fixture scripts, committed decision-log baselines, and placeholder directories
+- Deterministic contract fixtures are synthetic unless a test explicitly states otherwise
+- The repository also includes a small set of public VoxPopuli-derived French audio clips for manual demos and TUI workflows
+- Transcripts in `fixtures/transcripts/` are optional real Voxtral responses recorded against approved fixture audio only
+- No real personal data or private meeting recordings belong in any test fixture
+- Fresh clones contain committed baselines, synthetic audio fixtures, and the public VoxPopuli-derived clips; live vendor recordings remain opt-in

@@ -224,9 +224,7 @@ def _parse_decision(
     default_language: str,
     allowed_languages: tuple[str, ...],
 ) -> Decision | None:
-    summary = _first_text(item, "summary", "outcome", "decision", "title") or _meaningful_quote(
-        item
-    )
+    summary = _first_text(item, "summary", "outcome", "decision", "title")
     if not summary:
         return None
     confidence = _normalize_confidence(item.get("confidence"))

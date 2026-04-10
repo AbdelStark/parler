@@ -54,3 +54,18 @@ class TestE2ERunner:
             "slow",
             "-s",
         ]
+
+    def test_load_env_file_accepts_export_prefix(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("export MISTRAL_API_KEY=exported-key\n")
+
+        previous = dict(os.environ)
+        try:
+            os.environ.pop("MISTRAL_API_KEY", None)
+
+            load_env_file(env_file)
+
+            assert os.environ["MISTRAL_API_KEY"] == "exported-key"
+        finally:
+            os.environ.clear()
+            os.environ.update(previous)

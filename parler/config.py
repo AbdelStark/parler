@@ -222,15 +222,33 @@ def _validate(data: dict[str, Any]) -> None:
     if not api_key:
         raise ConfigError("Missing required config field: api_key")
     chunking = data["chunking"]
+    transcription = data["transcription"]
+    attribution = data["attribution"]
+    extraction = data["extraction"]
+    cost = data["cost"]
     if chunking["max_chunk_s"] <= 0:
         raise ConfigError("chunking.max_chunk_s must be positive")
     if chunking["overlap_s"] >= chunking["max_chunk_s"]:
         raise ConfigError("chunking.overlap_s must be smaller than max_chunk_s")
     if data["output"]["format"] not in {"markdown", "html", "json"}:
         raise ConfigError("output.format must be one of markdown, html, json")
-    if data["cost"]["max_usd"] < 0:
+    if transcription["timeout_s"] <= 0:
+        raise ConfigError("transcription.timeout_s must be positive")
+    if transcription["max_retries"] < 0:
+        raise ConfigError("transcription.max_retries must be non-negative")
+    if not 0.0 <= attribution["confidence_threshold"] <= 1.0:
+        raise ConfigError("attribution.confidence_threshold must be between 0 and 1")
+    if not 0.0 <= extraction["temperature"] <= 2.0:
+        raise ConfigError("extraction.temperature must be between 0 and 2")
+    if extraction["max_tokens"] <= 0:
+        raise ConfigError("extraction.max_tokens must be positive")
+    if cost["max_usd"] < 0:
         raise ConfigError("cost.max_usd must be non-negative")
-    if data["extraction"]["multi_pass_threshold"] <= 0:
+    if cost["confirm_above_usd"] < 0:
+        raise ConfigError("cost.confirm_above_usd must be non-negative")
+    if cost["confirm_above_usd"] > cost["max_usd"]:
+        raise ConfigError("cost.confirm_above_usd must be less than or equal to cost.max_usd")
+    if extraction["multi_pass_threshold"] <= 0:
         raise ConfigError("extraction.multi_pass_threshold must be positive")
 
 
