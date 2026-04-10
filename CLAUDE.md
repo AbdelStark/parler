@@ -10,6 +10,7 @@
 | Build backend | `uv_build` | `0.9.18` | configured in `pyproject.toml` with flat-layout support |
 | Package manager | `uv` | `0.9.18` | use `uv sync`, `uv run`, `uv build`, `uv publish` |
 | CLI | Click | `>=8.1` | `parler = parler.cli:main` |
+| TUI | Textual | `>=8.2.3` | `parler tui` and `parler-tui` expose an interactive showcase UI |
 | Core models | stdlib dataclasses + typed validation | current | canonical shapes live in `SDD.md` |
 | LLM vendor SDK | `mistralai` | `>=1.0.0` | Voxtral transcription + Mistral extraction [verify] |
 | Rendering | Jinja2 + Rich | `>=3.1`, `>=13.0` | HTML/Markdown/terminal output |
@@ -25,7 +26,7 @@
 
 - Repository status on `2026-04-09`: implementation in progress, not implementation-complete.
 - Phase 1 through Phase 7 core surfaces are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, stable Markdown/HTML/JSON rendering, explicit pipeline state/checkpoint helpers, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, export adapters, canonical CLI commands, prompt scaffolding, and compatibility shims.
-- Phase 8 verification scaffolding is now present: legacy `PipelineConfig` compatibility, synthetic fixture generation/recording scripts, placeholder fixture directories, benchmark baseline support, and a manual GitHub Actions workflow for live E2E/benchmark runs.
+- Phase 8 verification scaffolding is now present: legacy `PipelineConfig` compatibility, synthetic fixture generation/recording scripts, placeholder fixture directories, benchmark baseline support, a manual GitHub Actions workflow for live E2E/benchmark runs, and a first-class Textual TUI surface.
 - Remaining unfinished work is now mostly live-asset provisioning and higher-level hardening, not missing core pipeline stages.
 - The deadline test drift from earlier Phase 5 work is reconciled locally: the suite now treats `2026-04-09` as Thursday, which matches the implemented resolver and the broader parametrized/property contract.
 - CI and publishing workflows now exist under `.github/workflows/`.
@@ -50,6 +51,7 @@
 | Attribution | complete | `parler/attribution/*`, `parler/prompts/attribution.py`, and `parler.transcription.attributor` shim are implemented and test-backed |
 | Exports | complete | `parler/export/{notion,linear,jira,slack,result}.py` exist and are integration-tested |
 | CLI surface | complete for current contract | `process`, `transcribe`, `extract --from-state`, `report --from-state`, and `cache {list,show,clear}` are implemented and unit-tested |
+| Textual TUI | complete | `parler/tui/*` plus `parler tui` / `parler-tui` provide interactive runs, fixture presets, artifact browsing, and structured result views |
 | Formal verification | complete for implemented fast slice | widened unit/integration/property CI surface is green locally with `uv run pytest`, `ruff`, `mypy`, `uv build`, and smoke execution |
 | Phase 8 verification scaffold | operational, live runs opt-in | legacy `PipelineConfig` wrapper, `tests/fixtures/*` generation/recording scripts, placeholder fixture directories, benchmark baseline, and `.github/workflows/phase8-verification.yml` exist |
 
@@ -69,7 +71,7 @@ rfcs/                    # Historical component records; SPEC/SDD win on conflic
 features/                # BDD acceptance contracts [gated]
 tests/                   # pytest TDD/integration/property/E2E/benchmark contracts [gated]
 tests/fixtures/          # Synthetic fixture policy; actual audio/transcript assets mostly missing [gated]
-parler/                  # Runtime package; Phases 1-5 baseline exists [agent: modify]
+parler/                  # Runtime package; Phase 1-8 runtime and TUI surfaces exist [agent: modify]
 .codex/skills/           # Repo-local agent skills [agent: create/modify]
 .claude/skills -> ../.codex/skills
 .agents/skills -> ../.codex/skills
@@ -86,6 +88,7 @@ parler/
   config.py
   errors.py
   models.py
+  tui/
   prompts/
   audio/
   transcription/
@@ -114,6 +117,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | Deadline resolver suite | `uv run pytest tests/unit/test_deadline_resolution.py tests/unit/test_deadline_resolution_parametrized.py tests/property/test_deadline_resolver_properties.py -q` | now | green after reconciling the stale weekday assertions |
 | Generate synthetic fixtures | `uv run python tests/fixtures/generate_fixtures.py --all` | Phase 8 | audio generation needs `gtts` or `say`/`espeak` plus `ffmpeg`; silence fixture works with stdlib only |
 | Local E2E runner | `uv run parler-e2e` | Phase 8 | loads `.env`, verifies `ffprobe`, auto-generates missing fixtures, and defaults extraction to `mistral-medium-latest` |
+| Launch TUI | `uv run parler tui` | now | Textual cockpit with fixture presets, stage progress, results, and artifact browsing |
 | Benchmarks | `uv run pytest tests/benchmarks/test_performance.py -q -m benchmark --benchmark-json /tmp/parler-benchmark-raw.json && uv run python tests/benchmarks/update_baseline.py /tmp/parler-benchmark-raw.json tests/benchmarks/baseline.json` | Phase 8 | writes the reviewed summary baseline JSON |
 | Smoke test editable install | `uv run python tests/smoke_test.py` | now | exercises import surface and CLI help |
 | Fast verification | `uv run pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 8+ | widen only as later domains land |
@@ -197,7 +201,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 
 | Path | Zone | Reason |
 |---|---|---|
-| `parler/` | autonomous | primary implementation surface; Phase 1-5 baseline exists |
+| `parler/` | autonomous | primary implementation surface; core runtime plus Textual TUI live here |
 | `.codex/skills/`, `CLAUDE.md`, `agents.md` | autonomous | repo-local agent context |
 | `README.md`, `SPEC.md`, `SDD.md`, `TESTING.md`, `IMPLEMENTATION_PLAN.md`, `pyproject.toml` | gated | public/tooling/canonical contract files |
 | `rfcs/`, `features/`, `tests/`, `tests/fixtures/` | gated | contract and verification artifacts; update deliberately |

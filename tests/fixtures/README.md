@@ -1,13 +1,15 @@
 # Test Fixtures
 
-Test data for the `parler` verification suite. All fixtures are synthetic. Never
-record or commit real meeting audio, real transcripts, or secret-bearing artifacts.
+Test data for the `parler` verification suite. Most fixtures are synthetic. The
+repository also contains one public French source recording from VoxPopuli plus
+five derived 2-minute clips for manual/TUI experiments. Never commit private
+meeting audio, secret-bearing artifacts, or user recordings.
 
 ## Directory layout
 
 ```text
 fixtures/
-├── audio/                          # Generated synthetic audio fixtures (.gitkeep by default)
+├── audio/                          # Synthetic fixtures plus committed public VoxPopuli FR clips
 ├── transcripts/                    # Optional recorded Voxtral transcript fixtures (.gitkeep by default)
 ├── extractions/                    # Optional recorded extraction fixtures (.gitkeep by default)
 ├── decision_logs/                  # Committed expected DecisionLog baselines
@@ -18,8 +20,9 @@ fixtures/
 └── record_extraction.py            # Opt-in real API recorder for extraction fixtures
 ```
 
-Fresh clones only contain the committed baselines, scripts, and placeholder directories.
-Audio, transcript, and extraction fixtures are generated or recorded deliberately.
+Fresh clones contain the committed baselines, scripts, synthetic fixture assets,
+and the committed VoxPopuli-derived French clips. Optional transcript and
+extraction recordings are still generated deliberately.
 
 ## Generating fixtures
 
@@ -72,11 +75,35 @@ synthetic audio. Review them before deciding whether to commit them.
 
 ## Data policy
 
-- Audio fixtures are synthetic only.
-- Text content is fictional business dialogue, not real meeting content.
-- Names are fictional placeholders such as `Pierre`, `Sophie`, and `Alice`.
-- Transcript and extraction fixtures, if recorded, must come only from synthetic audio.
+- The deterministic goldens in this repo are built from synthetic audio.
+- The repo also contains one public VoxPopuli French source recording and five
+  short derived clips for manual/local experiments.
+- Synthetic text content is fictional business dialogue with fictional names such
+  as `Pierre`, `Sophie`, and `Alice`.
+- VoxPopuli-derived clips are public parliamentary speech, not private meeting content.
+- Transcript and extraction fixtures that back deterministic assertions should
+  still be generated only from the synthetic fixtures unless the contract is
+  updated deliberately.
 - Secrets, caches, checkpoints, and user recordings are never valid fixture data.
+
+## VoxPopuli-derived French clips
+
+The file `tests/fixtures/audio/20200527-0900-PLENARY_fr.ogg` is a French 2020
+recording sourced from the [VoxPopuli](https://github.com/facebookresearch/voxpopuli)
+dataset. VoxPopuli describes itself as a large-scale multilingual speech corpus
+built from European Parliament event recordings, and its data is published under
+CC0.
+
+For local experimentation, the repo now keeps five deterministic 2-minute clips:
+
+- `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_01.mp3`
+- `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_02.mp3`
+- `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_03.mp3`
+- `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_04.mp3`
+- `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clip_05.mp3`
+
+See `tests/fixtures/audio/voxpopuli_fr_20200527_plenary_clips.md` for the exact
+start/end offsets and provenance notes.
 
 ## Content of `fr_meeting_5min`
 

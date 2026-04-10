@@ -9,28 +9,14 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-DEFAULT_ENV_FILE = Path(".env")
+from .util.env import DEFAULT_ENV_FILE, apply_api_key_aliases, load_env_file
+
 DEFAULT_EXTRACTION_MODEL = "mistral-medium-latest"
 REQUIRED_AUDIO_FIXTURES = (
     Path("tests/fixtures/audio/fr_meeting_5min.mp3"),
     Path("tests/fixtures/audio/bilingual_meeting_5min.mp3"),
     Path("tests/fixtures/audio/earnings_call_45min.mp3"),
 )
-
-
-def load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        key = name.strip()
-        if not key:
-            continue
-        normalized = value.strip().strip("'\"")
-        os.environ.setdefault(key, normalized)
 
 
 def _has_explicit_target(args: Sequence[str]) -> bool:
@@ -99,8 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args, pytest_args = parser.parse_known_args(argv)
 
     load_env_file(args.env_file)
-    if "MISTRAL_API_KEY" not in os.environ and "PARLER_API_KEY" in os.environ:
-        os.environ["MISTRAL_API_KEY"] = os.environ["PARLER_API_KEY"]
+    apply_api_key_aliases()
     if "MISTRAL_API_KEY" not in os.environ:
         raise SystemExit("MISTRAL_API_KEY is required. Set it in the environment or .env.")
 

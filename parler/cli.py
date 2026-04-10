@@ -513,6 +513,20 @@ def clear_cache(config_path: Path | None, assume_yes: bool) -> None:
     click.echo("Cache cleared.")
 
 
+@cli.command()
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    help="Open the TUI against a specific project root.",
+)
+def tui(project_root: Path | None) -> None:
+    """Launch the Textual cockpit for parler."""
+
+    from .tui import main as tui_main
+
+    tui_main(project_root=project_root.resolve() if project_root is not None else None)
+
+
 def main() -> None:
     try:
         cli.main(prog_name="parler", standalone_mode=False)

@@ -30,6 +30,7 @@ dependencies = [
     "mistralai>=1.0.0",
     "pydantic>=2.0",
     "rich>=13.0",
+    "textual>=8.2.3",
     "jinja2>=3.1",
     "PyYAML>=6.0.2",
     "requests>=2.32.0",
@@ -89,6 +90,7 @@ diarize = [
 [project.scripts]
 parler = "parler.cli:main"
 parler-e2e = "parler.e2e:main"
+parler-tui = "parler.tui:main"
 
 [tool.uv]
 default-groups = ["dev"]

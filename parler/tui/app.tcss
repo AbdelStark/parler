@@ -1,0 +1,415 @@
+Screen {
+    background: #09101d;
+    color: #f6f2ea;
+}
+
+#topbar {
+    height: 3;
+    padding: 0 1;
+    background: #f5eee1;
+    color: #10203a;
+    border-bottom: tall #153761;
+}
+
+#topbar-brand {
+    width: auto;
+    margin-right: 2;
+    color: #10203a;
+    text-style: bold;
+}
+
+#topbar-title {
+    width: 1fr;
+    color: #516177;
+    text-style: bold;
+}
+
+#topbar-pills {
+    width: auto;
+    height: 3;
+}
+
+.topbar-pill {
+    width: auto;
+    height: 3;
+    margin-left: 1;
+    padding: 0 1;
+    background: #e8dfcf;
+    color: #1a2942;
+    border: round #d9cfbe;
+}
+
+.topbar-pill.accent {
+    background: #153761;
+    color: #f9f5ee;
+    border: round #5d90eb;
+}
+
+.topbar-pill.good {
+    background: #153b2d;
+    color: #effcf4;
+    border: round #2fb06d;
+}
+
+.topbar-pill.warn {
+    background: #4b2512;
+    color: #fff1e4;
+    border: round #df8e44;
+}
+
+.topbar-pill.quiet {
+    color: #6d7787;
+}
+
+#topbar.compact #topbar-title,
+#topbar.compact #topbar-hint {
+    display: none;
+}
+
+#shell {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#shell.stack {
+    layout: vertical;
+}
+
+#sidebar {
+    width: 30;
+    min-width: 26;
+    padding: 1;
+    background: #0f1d31;
+    border-right: tall #1a365d;
+}
+
+#shell.stack #sidebar {
+    width: 1fr;
+    height: 18;
+    border-right: none;
+    border-bottom: tall #1a365d;
+}
+
+#brand-card {
+    margin: 0 0 1 0;
+    padding: 1 2;
+    background: #f7f0e4;
+    color: #10203a;
+    border: round #ead9c0;
+    border-left: heavy #1d5fbf;
+    text-style: bold;
+}
+
+#action-cluster,
+#fixture-cluster,
+#telemetry-cluster {
+    margin: 1 0 0 0;
+    padding: 1;
+    background: #111f35;
+    border: round #20395c;
+}
+
+.cluster-title {
+    margin: 0 0 1 0;
+    color: #efc76a;
+    text-style: bold;
+}
+
+Button {
+    width: 1fr;
+    margin: 0 0 1 0;
+}
+
+#run-button {
+    background: #1d5fbf;
+    color: #f8f5ee;
+    text-style: bold;
+}
+
+#fixture-cluster Button {
+    background: #16263f;
+    color: #f4efe7;
+}
+
+.metric-card {
+    margin: 0 0 1 0;
+    padding: 1 2;
+    min-height: 4;
+    background: #16243b;
+    color: #edf2fb;
+    border: round #253f64;
+}
+
+#main-tabs {
+    width: 1fr;
+    height: 1fr;
+    min-width: 0;
+    background: #0b1424;
+}
+
+Tabs {
+    background: #0e1a2f;
+    border-bottom: tall #1d3658;
+}
+
+Tab {
+    padding: 0 1;
+    color: #91a7cb;
+    text-style: bold;
+}
+
+Tab.-active {
+    color: #f6f2ea;
+}
+
+TabPane {
+    padding: 1 2 2 2;
+}
+
+#studio-layout,
+#artifacts-layout {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#studio-layout.stack,
+#artifacts-layout.stack {
+    layout: vertical;
+}
+
+#form-scroll {
+    width: 2fr;
+    min-width: 54;
+    padding: 1 2;
+    background: #0f1829;
+    border: round #203554;
+}
+
+#form-scroll.compact .field-row,
+#form-scroll.compact #switch-row {
+    layout: vertical;
+}
+
+#form-scroll.compact .field,
+#form-scroll.compact .switch-field {
+    margin-right: 0;
+}
+
+#studio-layout.stack #form-scroll {
+    width: 1fr;
+    min-width: 0;
+    height: 24;
+    margin-bottom: 1;
+}
+
+#runtime-column,
+#artifacts-column {
+    width: 1fr;
+    min-width: 0;
+    padding-left: 2;
+}
+
+#studio-layout.stack #runtime-column,
+#artifacts-layout.stack #artifacts-column {
+    padding-left: 0;
+}
+
+.section-title {
+    margin: 0 0 1 0;
+    padding: 0 1;
+    background: #13233d;
+    color: #d8e5ff;
+    text-style: bold;
+    border-left: heavy #f0c96d;
+}
+
+.section-title.compact {
+    margin-top: 1;
+}
+
+.field-row {
+    height: auto;
+    layout: horizontal;
+    margin: 0 0 1 0;
+}
+
+.field,
+.switch-field {
+    width: 1fr;
+    margin-right: 1;
+}
+
+.field:last-child,
+.switch-field:last-child {
+    margin-right: 0;
+}
+
+.field-label,
+.switch-label {
+    margin: 0 0 1 0;
+    color: #efc76a;
+    text-style: bold;
+}
+
+.field.is-help {
+    min-height: 8;
+}
+
+#form-help {
+    padding: 1;
+    background: #132038;
+    color: #c6d7f3;
+    border: round #274164;
+}
+
+Input,
+Select,
+Switch {
+    width: 1fr;
+    margin: 0 0 1 0;
+}
+
+#switch-row {
+    margin-top: 1;
+    padding: 1;
+    background: #111b2d;
+    border: round #213655;
+}
+
+.hero-card {
+    margin: 0 0 1 0;
+    padding: 1 2;
+    min-height: 6;
+    background: #f7f0e4;
+    color: #10203a;
+    border: round #ead9c0;
+}
+
+.hero-card.compact {
+    min-height: 5;
+}
+
+#stage-progress {
+    margin: 0 0 1 0;
+}
+
+#stage-grid {
+    layout: grid;
+    grid-size: 5;
+    grid-columns: 1fr 1fr 1fr 1fr 1fr;
+    grid-gutter: 1 1;
+    margin: 0 0 1 0;
+}
+
+#stage-grid.compact {
+    grid-size: 3;
+    grid-columns: 1fr 1fr 1fr;
+}
+
+#stage-grid.dense {
+    grid-size: 2;
+    grid-columns: 1fr 1fr;
+}
+
+.stage-card {
+    min-height: 5;
+    padding: 1;
+    background: #142239;
+    color: #afc1df;
+    border: round #2a456b;
+    text-style: bold;
+}
+
+.stage-card.is-running {
+    background: #153761;
+    color: #f4f9ff;
+    border: round #5e91ec;
+}
+
+.stage-card.is-complete {
+    background: #153b2d;
+    color: #effcf4;
+    border: round #2fb06d;
+}
+
+.stage-card.is-error {
+    background: #4a1f29;
+    color: #fff0f2;
+    border: round #ff7081;
+}
+
+.stage-card.is-skipped {
+    background: #252431;
+    color: #bab8c3;
+    border: round #585a6d;
+}
+
+#run-log,
+#artifact-preview,
+#transcript-view,
+#raw-output-view,
+#report-markdown,
+#about-markdown,
+#cache-table,
+#decision-table,
+#commitment-table,
+#question-table,
+#rejection-table,
+#file-tree {
+    background: #101b2d;
+    border: round #223b5e;
+}
+
+#run-log {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#results-tab {
+    padding: 1 2 2 2;
+}
+
+#results-tabs {
+    height: 1fr;
+}
+
+.text-scroll {
+    height: 1fr;
+}
+
+#artifact-preview,
+#transcript-view,
+#raw-output-view {
+    padding: 1 2;
+}
+
+#preview-scroll {
+    height: 1fr;
+    margin: 0 0 1 0;
+}
+
+#file-tree {
+    width: 38;
+    min-width: 28;
+    margin-right: 1;
+}
+
+#artifacts-layout.stack #file-tree {
+    width: 1fr;
+    height: 16;
+    margin-right: 0;
+    margin-bottom: 1;
+}
+
+Markdown {
+    padding: 1 2;
+}
+
+DataTable {
+    height: 1fr;
+}
+
+Footer {
+    background: #f5eee1;
+    color: #10203a;
+}

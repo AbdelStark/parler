@@ -2,7 +2,15 @@
 
 > Multilingual voice intelligence built on Voxtral. Decision logs from French/English meetings and earnings calls.
 
-**Status: Alpha.** Phase 1 through Phase 7 core runtime surfaces are implemented, and the Phase 8 verification scaffold is now in tree: legacy `PipelineConfig` compatibility for E2E tests, synthetic fixture generation/recording scripts, benchmark baseline support, widened fast CI coverage, and a manual GitHub Actions workflow for live E2E/benchmark runs. Real API recordings and generated audio assets remain opt-in.
+**Status: Alpha.** Phase 1 through Phase 8 runtime and verification surfaces are implemented, including a first-class Textual TUI showcase for live pipeline runs, fixture demos, cache browsing, transcript/report review, and structured decision inspection. Real API recordings remain opt-in; the repository already includes committed synthetic fixtures plus a small set of public VoxPopuli-derived French clips.
+
+For fixture provenance: the repository’s deterministic golden tests still use
+synthetic audio, but the committed fixture tree now also includes a small set of
+public French clips derived from the
+[VoxPopuli](https://github.com/facebookresearch/voxpopuli) dataset
+(*VoxPopuli: A Large-Scale Multilingual Speech Corpus for Representation Learning,
+Semi-Supervised Learning and Interpretation*), sourced from European Parliament
+recordings under the dataset’s CC0 data license.
 
 The canonical sources of truth are:
 
@@ -93,6 +101,8 @@ uv run parler --help
 uv run parler transcribe meeting.mp3 --format json
 uv run parler report --from-state .parler-state.json --format html
 uv run parler cache list
+uv run parler tui
+uv run parler-tui
 
 # Run the implemented test-backed slice
 uv run pytest \
@@ -127,7 +137,7 @@ uv run python tests/benchmarks/update_baseline.py \
 uv build
 ```
 
-Decision extraction, canonical Markdown/HTML/JSON rendering, isolated Notion/Linear/Jira/Slack export adapters, checkpoint loading, and the canonical `process` / `transcribe` / `extract --from-state` / `report --from-state` / `cache` CLI commands are implemented and test-backed. Phase 8 now covers the verification layer around that runtime: fixture scripts, compatibility adapters, a repo-native `uv run parler-e2e` wrapper for live tests, benchmark baselines, and manual live verification workflow. The remaining roadmap work is higher-level hardening and polish, not missing core pipeline stages.
+Decision extraction, canonical Markdown/HTML/JSON rendering, isolated Notion/Linear/Jira/Slack export adapters, checkpoint loading, the Textual showcase TUI, and the canonical `process` / `transcribe` / `extract --from-state` / `report --from-state` / `cache` / `tui` CLI commands are implemented and test-backed. Phase 8 now covers the verification layer around that runtime: fixture scripts, compatibility adapters, a repo-native `uv run parler-e2e` wrapper for live tests, benchmark baselines, and manual live verification workflow. The remaining roadmap work is higher-level hardening and polish, not missing core pipeline stages.
 
 ## Design
 
@@ -150,6 +160,7 @@ only specification entrypoint.
 - **Decision extraction**: mistral-large-latest via La Plateforme API
 - **Audio preprocessing**: FFmpeg (optional, for format conversion and chunking)
 - **Language**: Python 3.11+
+- **TUI**: Textual 8
 - **Packaging / workflow**: `uv`, `uv_build`, GitHub Actions Trusted Publishing
 
 ## License
