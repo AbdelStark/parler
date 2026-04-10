@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import subprocess
 import tempfile
 import wave
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..errors import EnvironmentError, InputError
@@ -161,6 +163,28 @@ def _convert_with_ffmpeg(source: Path) -> Path:
     return converted
 
 
+def managed_audio_directory() -> Path:
+    _TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    return _TEMP_AUDIO_DIR
+
+
+def managed_audio_file_count() -> int:
+    directory = managed_audio_directory()
+    return len(list(directory.glob("*.wav")))
+
+
+def prune_managed_audio_files(*, older_than_days: float = 1.0) -> int:
+    directory = managed_audio_directory()
+    threshold = datetime.now(UTC) - timedelta(days=older_than_days)
+    removed = 0
+    for candidate in directory.glob("*.wav"):
+        modified = datetime.fromtimestamp(candidate.stat().st_mtime, tz=UTC)
+        if math.isclose(older_than_days, 0.0) or modified < threshold:
+            candidate.unlink(missing_ok=True)
+            removed += 1
+    return removed
+
+
 class AudioIngester:
     """Validate and normalize audio inputs into canonical AudioFile objects."""
 
@@ -201,4 +225,13 @@ class AudioIngester:
         )
 
 
-__all__ = ["AudioFile", "AudioIngester", "_convert_with_ffmpeg", "_probe_audio", "ffmpeg_available"]
+__all__ = [
+    "AudioFile",
+    "AudioIngester",
+    "_convert_with_ffmpeg",
+    "_probe_audio",
+    "ffmpeg_available",
+    "managed_audio_directory",
+    "managed_audio_file_count",
+    "prune_managed_audio_files",
+]

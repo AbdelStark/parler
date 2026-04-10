@@ -16,13 +16,20 @@ Design contract:
 """
 
 import hashlib
+import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from parler.audio.ingester import AudioIngester, _convert_with_ffmpeg
+from parler.audio.ingester import (
+    AudioIngester,
+    _convert_with_ffmpeg,
+    managed_audio_file_count,
+    prune_managed_audio_files,
+)
 from parler.errors import EnvironmentError, InputError
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -152,6 +159,29 @@ class TestFFmpegFormats:
             pytest.raises(InputError, match="could not decode"),
         ):
             AudioIngester().ingest(f)
+
+
+class TestManagedAudioLifecycle:
+    def test_prune_managed_audio_files_removes_only_stale_wavs(self, tmp_path: Path) -> None:
+        stale_wav = tmp_path / "stale.wav"
+        fresh_wav = tmp_path / "fresh.wav"
+        note = tmp_path / "note.txt"
+        stale_wav.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+        fresh_wav.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+        note.write_text("keep me", encoding="utf-8")
+        now = time.time()
+        stale = now - (3 * 24 * 60 * 60)
+        os.utime(stale_wav, (stale, stale))
+        os.utime(fresh_wav, (now, now))
+
+        with patch("parler.audio.ingester._TEMP_AUDIO_DIR", tmp_path):
+            assert managed_audio_file_count() == 2
+            removed = prune_managed_audio_files(older_than_days=1.0)
+
+        assert removed == 1
+        assert not stale_wav.exists()
+        assert fresh_wav.exists()
+        assert note.exists()
 
 
 # ─── File validation ──────────────────────────────────────────────────────────

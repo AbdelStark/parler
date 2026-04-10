@@ -16,6 +16,12 @@ history.
   workflows, with provenance notes in `tests/fixtures/audio/`.
 - Automatic `.env` loading for the TUI and local E2E runner.
 - `.env.example` for local setup.
+- `parler doctor` for local readiness checks, `parler runs {list,show}` for
+  inspecting `.parler-runs/`, and `parler cleanup` for pruning stale local run
+  bundles and normalized temp audio.
+- Per-run local trace bundles under `.parler-runs/<trace_id>/` with `run.json`
+  summaries and `events.jsonl` stage streams for `process`, `transcribe`, and
+  TUI-driven runs.
 
 ### Changed
 
@@ -30,6 +36,8 @@ history.
 - `--cost-estimate` and the orchestrator cost gate now use a conservative
   preflight estimator instead of the previous `0.0` stub, and `cost.max_usd`
   is enforced before the first billable stage.
+- Normalized temp-audio cleanup and run-artifact retention are now explicit
+  operator workflows instead of ad hoc filesystem cleanup.
 
 ### Fixed
 

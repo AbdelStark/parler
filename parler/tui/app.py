@@ -46,6 +46,7 @@ from ..pipeline.state import (
     load_processing_state,
 )
 from ..rendering.renderer import OutputFormat, RenderConfig, ReportRenderer
+from ..runlog import RunRecorder
 from ..util.env import DEFAULT_ENV_FILE, apply_api_key_aliases, load_env_file
 from ..util.serialization import to_jsonable
 
@@ -259,8 +260,10 @@ class ParlerTUIApp(App[None]):
         super().__init__()
         self.project_root = (project_root or Path.cwd()).resolve()
         self._pipeline_worker: Worker[ProcessingState | None] | None = None
+        self._run_recorder: RunRecorder | None = None
         self.current_request: PipelineRequest | None = None
         self.current_state: ProcessingState | None = None
+        self.current_trace_id: str | None = None
         self._last_output_payload = ""
 
     def compose(self) -> ComposeResult:
@@ -555,14 +558,27 @@ class ParlerTUIApp(App[None]):
             self.notify(str(exc), title="Cannot start run", severity="error")
             return
         self.current_request = request
+        recorder = RunRecorder(
+            command="tui",
+            project_root=self.project_root,
+            input_path=request.input_path,
+            config_path=request.config_path,
+            output_path=request.output_path,
+            checkpoint_path=request.checkpoint_path,
+        )
+        self._run_recorder = recorder
+        self.current_trace_id = recorder.trace_id
         self._reset_runtime(request)
         self._set_busy(True)
         self._write_log(
             f"Starting pipeline for {request.input_path.name} · "
             f"langs={','.join(request.languages) or 'auto'} · format={request.output_format}"
         )
+        self._write_log(
+            f"Trace {self.current_trace_id} -> {_display_path(recorder.run_dir, self.project_root)}"
+        )
         self._pipeline_worker = self.run_worker(
-            lambda: self._run_pipeline_worker(request),
+            lambda: self._run_pipeline_worker(request, recorder),
             thread=True,
             exclusive=True,
             group="pipeline",
@@ -583,6 +599,7 @@ class ParlerTUIApp(App[None]):
             self.notify(str(exc), title="Checkpoint error", severity="error")
             return
         self.current_request = None
+        self.current_trace_id = None
         self.present_state(state, source=f"checkpoint · {checkpoint_path.name}")
         self._write_log(f"Loaded checkpoint {checkpoint_path}")
         self.notify("Checkpoint loaded.", severity="information")
@@ -668,12 +685,21 @@ class ParlerTUIApp(App[None]):
         if event.state is WorkerState.SUCCESS:
             state = event.worker.result
             if state is None:
+                if self._run_recorder is not None:
+                    self._run_recorder.finish_cancelled()
                 self._write_log("Pipeline returned no state.")
                 self.notify("Pipeline produced no result.", severity="warning")
                 self.sub_title = "Idle"
                 return
             self.present_state(state, source="live run")
             self._persist_output(state)
+            if self._run_recorder is not None:
+                self._run_recorder.set_checkpoint_path(state.checkpoint_path)
+                self._run_recorder.finish_success(state)
+                self._write_log(
+                    "Run artifacts stored in "
+                    f"{_display_path(self._run_recorder.run_dir, self.project_root)}"
+                )
             self._write_log("Pipeline completed successfully.")
             self.notify("Pipeline complete.", severity="information")
             self.sub_title = "Run complete"
@@ -681,6 +707,8 @@ class ParlerTUIApp(App[None]):
             return
         if event.state is WorkerState.ERROR:
             error = event.worker.error
+            if self._run_recorder is not None and error is not None:
+                self._run_recorder.finish_failure(error)
             self._write_log(f"Pipeline failed: {error}")
             self.notify(str(error), title="Pipeline failed", severity="error", timeout=8)
             self.sub_title = "Run failed"
@@ -758,6 +786,7 @@ class ParlerTUIApp(App[None]):
         self.query_one("#no-diarize-switch", Switch).value = False
         self.query_one("#anonymize-switch", Switch).value = False
         self.query_one("#resume-switch", Switch).value = False
+        self.current_trace_id = None
         self._reset_runtime()
         self._refresh_metrics()
         self.notify("Form cleared.", severity="information", timeout=1.5)
@@ -819,9 +848,22 @@ class ParlerTUIApp(App[None]):
             return
         widget.update(_preview_text(path))
 
-    def _run_pipeline_worker(self, request: PipelineRequest) -> ProcessingState | None:
+    def _run_pipeline_worker(
+        self,
+        request: PipelineRequest,
+        recorder: RunRecorder,
+    ) -> ProcessingState | None:
         config = build_tui_config(request)
         orchestrator = PipelineOrchestrator(config)
+
+        def on_stage_start(stage: PipelineStage) -> None:
+            recorder.stage_started(stage)
+            self.call_from_thread(self._handle_stage_start, stage)
+
+        def on_stage_complete(stage: PipelineStage, duration: float) -> None:
+            recorder.stage_completed(stage, duration)
+            self.call_from_thread(self._handle_stage_complete, stage, duration)
+
         return orchestrator.run(
             request.input_path,
             transcribe_only=request.transcribe_only,
@@ -829,10 +871,8 @@ class ParlerTUIApp(App[None]):
             checkpoint_path=request.checkpoint_path,
             resume=request.resume,
             on_cost_confirm=lambda _: True,
-            on_stage_start=lambda stage: self.call_from_thread(self._handle_stage_start, stage),
-            on_stage_complete=lambda stage, duration: self.call_from_thread(
-                self._handle_stage_complete, stage, duration
-            ),
+            on_stage_start=on_stage_start,
+            on_stage_complete=on_stage_complete,
         )
 
     def _configure_tables(self) -> None:
@@ -1002,11 +1042,13 @@ class ParlerTUIApp(App[None]):
         if request is not None:
             participants = ", ".join(request.participants) or "none"
             languages = ", ".join(request.languages) or "auto"
+            trace_detail = f"\nTrace: {self.current_trace_id}" if self.current_trace_id else ""
             self.query_one("#run-summary", Static).update(
                 f"{request.input_path.name}\n"
                 f"Languages: {languages}\n"
                 f"Participants: {participants}\n"
                 f"Format: {request.output_format}"
+                f"{trace_detail}"
             )
         else:
             self.query_one("#run-summary", Static).update(
@@ -1084,11 +1126,13 @@ class ParlerTUIApp(App[None]):
         decision_count = len(state.decision_log.decisions) if state.decision_log else 0
         commitment_count = len(state.decision_log.commitments) if state.decision_log else 0
         report_model = state.decision_log.metadata.model if state.decision_log else "n/a"
+        trace_line = f"\nTrace: {self.current_trace_id}" if self.current_trace_id else ""
         self.query_one("#results-hero", Static).update(
             f"{source}\n"
             f"Languages: {language_text}\n"
             f"Decisions: {decision_count} · Commitments: {commitment_count}\n"
             f"Model: {report_model}"
+            f"{trace_line}"
         )
 
     def _update_transcript_view(self, transcript: Transcript | None) -> None:
@@ -1145,6 +1189,8 @@ class ParlerTUIApp(App[None]):
         payload = self._serialize_output_payload(state)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(payload, encoding="utf-8")
+        if self._run_recorder is not None:
+            self._run_recorder.set_output_path(target_path)
         self._write_log(f"Wrote output to {target_path}")
 
     def _populate_tables(self, decision_log: DecisionLog | None) -> None:

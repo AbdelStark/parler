@@ -40,6 +40,7 @@ auto-load `.env` from the current project root.
 Validate configuration and run a first fixture:
 
 ```bash
+uv run parler doctor
 uv run parler config validate
 
 uv run parler process \
@@ -68,6 +69,12 @@ Inspect the CLI surface:
 
 ```bash
 uv run parler --help
+```
+
+Check local readiness before a live run:
+
+```bash
+uv run parler doctor
 ```
 
 Transcribe only:
@@ -100,6 +107,20 @@ Inspect local cache entries:
 uv run parler cache list
 uv run parler cache show <key>
 uv run parler cache clear --yes
+```
+
+Inspect recorded run artifacts:
+
+```bash
+uv run parler runs list
+uv run parler runs show <trace_id> --json
+```
+
+Prune stale local artifacts:
+
+```bash
+uv run parler cleanup --older-than-days 7
+uv run parler cleanup --temp-audio --older-than-days 1
 ```
 
 Estimate spend before the first billable stage:
@@ -146,6 +167,11 @@ High-level flow:
 4. Extract structured decisions and commitments
 5. Render Markdown/HTML/JSON
 6. Optionally export to downstream systems
+
+Every `process`, `transcribe`, and TUI-driven run now records a local artifact
+bundle under `.parler-runs/<trace_id>/` with a `run.json` summary and
+`events.jsonl` stage stream. These bundles are local operator artifacts and are
+ignored by git.
 
 ## Testing and verification
 
@@ -205,8 +231,10 @@ manual demos and TUI workflows, not as deterministic contract goldens.
 ## Security and local-data handling
 
 - `.env`, caches, and checkpoints are local-only artifacts and are ignored by git
+- `.parler-runs/` stores per-run trace bundles for local troubleshooting and is ignored by git
 - checkpoints may contain transcript text and decision content; treat them as sensitive
 - checkpoint/cache JSON writes use restrictive permissions where the host OS allows
+- run summaries and event streams use the same atomic/restrictive local write discipline
 - resume now rejects incomplete or mismatched checkpoints instead of continuing in an incoherent state
 - no real customer recordings, transcripts, or secrets should be committed to the repository
 
@@ -216,7 +244,7 @@ manual demos and TUI workflows, not as deterministic contract goldens.
 - Cost estimation is conservative and model-price dependent; verify pricing before relying on it operationally
 - Export adapters are thin integration surfaces, not full sync engines
 - There is no deployment/runbook surface for multi-user or server operation because this is not yet a service
-- FFmpeg-backed normalization uses temporary local artifacts; sustained cleanup policy is still minimal
+- FFmpeg-backed normalization uses temporary local artifacts; cleanup is manual via `parler cleanup`
 - CI validates the implemented slice, not every future-facing draft in `tests/` and `features/`
 
 ## Contributing

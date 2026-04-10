@@ -9,8 +9,9 @@ from pathlib import Path
 
 import click
 
-from .audio.ingester import AudioIngester
+from .audio.ingester import AudioIngester, prune_managed_audio_files
 from .config import CacheConfig, load_config
+from .doctor import format_doctor_report, run_doctor
 from .errors import ParlerError, ProcessingError, exit_code_for
 from .extraction.extractor import DecisionExtractor
 from .models import DecisionLog, Transcript
@@ -18,6 +19,7 @@ from .pipeline import PipelineOrchestrator
 from .pipeline.orchestrator import estimate_cost
 from .pipeline.state import load_processing_state, save_processing_state
 from .rendering.renderer import OutputFormat, RenderConfig, ReportRenderer
+from .runlog import RunRecorder, iter_run_summaries, load_run_summary, prune_run_summaries
 from .transcription.cache import TranscriptCache
 from .util.env import DEFAULT_ENV_FILE, apply_api_key_aliases, load_env_file
 from .util.serialization import to_jsonable
@@ -124,6 +126,27 @@ def _resolve_cache_settings(config_path: Path | None) -> CacheConfig:
         return CacheConfig()
 
 
+def _echo_json(value: object) -> None:
+    click.echo(json.dumps(to_jsonable(value), indent=2, ensure_ascii=False))
+
+
+def _format_run_summary(summary: dict[str, object]) -> str:
+    input_path = summary.get("input_path")
+    source = Path(str(input_path)).name if input_path else "-"
+    stages = summary.get("stages")
+    stage_count = len(stages) if isinstance(stages, dict) else 0
+    return "\t".join(
+        (
+            str(summary.get("trace_id", "-")),
+            str(summary.get("command", "-")),
+            str(summary.get("status", "-")),
+            str(summary.get("started_at", "-")),
+            source,
+            str(stage_count),
+        )
+    )
+
+
 def _build_overrides(
     *,
     languages: tuple[str, ...],
@@ -201,67 +224,96 @@ def process(
 ) -> None:
     """Process an audio file into a transcript or decision report."""
 
+    project_root = Path.cwd().resolve()
     resolved_participants = _split_participants(participants, participants_csv)
     requested_format = (
         output_format.lower()
         if output_format is not None
         else _infer_report_format_from_path(output_path)
     )
-    overrides = _build_overrides(
-        languages=languages,
-        output_format=requested_format,
-        output_path=output_path,
-        participants=resolved_participants,
-        meeting_date_value=meeting_date_value,
-        anonymize_speakers=anonymize_speakers,
-    )
-    config = load_config(config_path=config_path, overrides=overrides)
 
     if cost_estimate:
+        overrides = _build_overrides(
+            languages=languages,
+            output_format=requested_format,
+            output_path=output_path,
+            participants=resolved_participants,
+            meeting_date_value=meeting_date_value,
+            anonymize_speakers=anonymize_speakers,
+        )
+        config = load_config(config_path=config_path, overrides=overrides)
         audio_file = AudioIngester().ingest(input_path)
         click.echo(f"Estimated total cost: ${estimate_cost(audio_file, config):.2f}")
         return
 
-    orchestrator = PipelineOrchestrator(config)
-    resolved_format = requested_format or config.output.format
-
-    def confirm_cost(cost: float) -> bool:
-        if assume_yes:
-            return True
-        return click.confirm(f"Estimated API cost is ${cost:.2f}. Continue?", default=False)
-
-    state = orchestrator.run(
-        input_path,
-        transcribe_only=transcribe_only,
-        no_diarize=no_diarize,
+    recorder = RunRecorder(
+        command="process",
+        project_root=project_root,
+        input_path=input_path,
+        config_path=config_path,
+        output_path=output_path,
         checkpoint_path=checkpoint_path,
-        resume=resume,
-        on_cost_confirm=confirm_cost,
     )
-    if state is None:
-        click.echo("Processing cancelled before the first billable stage.", err=True)
-        return
-
-    rendered_output: str | None
-    if transcribe_only:
-        rendered_output = (
-            _render_transcript_payload(
-                state.transcript, "json" if resolved_format == "json" else "text"
-            )
-            if state.transcript is not None
-            else None
+    try:
+        overrides = _build_overrides(
+            languages=languages,
+            output_format=requested_format,
+            output_path=output_path,
+            participants=resolved_participants,
+            meeting_date_value=meeting_date_value,
+            anonymize_speakers=anonymize_speakers,
         )
-    else:
-        rendered_output = state.report
+        config = load_config(config_path=config_path, overrides=overrides)
+        orchestrator = PipelineOrchestrator(config)
+        resolved_format = requested_format or config.output.format
 
-    if rendered_output is None:
-        click.echo("No output produced.", err=True)
-        return
+        def confirm_cost(cost: float) -> bool:
+            if assume_yes:
+                return True
+            return click.confirm(f"Estimated API cost is ${cost:.2f}. Continue?", default=False)
 
-    target_path = output_path or config.output.output_path
-    if target_path is None and output_format is None and not transcribe_only:
-        target_path = _default_report_path(input_path, resolved_format)
-    _write_or_echo(rendered_output, target_path)
+        state = orchestrator.run(
+            input_path,
+            transcribe_only=transcribe_only,
+            no_diarize=no_diarize,
+            checkpoint_path=checkpoint_path,
+            resume=resume,
+            on_cost_confirm=confirm_cost,
+            on_stage_start=recorder.stage_started,
+            on_stage_complete=recorder.stage_completed,
+        )
+        if state is None:
+            recorder.finish_cancelled()
+            click.echo("Processing cancelled before the first billable stage.", err=True)
+            return
+
+        rendered_output: str | None
+        if transcribe_only:
+            rendered_output = (
+                _render_transcript_payload(
+                    state.transcript, "json" if resolved_format == "json" else "text"
+                )
+                if state.transcript is not None
+                else None
+            )
+        else:
+            rendered_output = state.report
+
+        if rendered_output is None:
+            recorder.finish_failure(ProcessingError("No output produced."))
+            click.echo("No output produced.", err=True)
+            return
+
+        target_path = output_path or config.output.output_path
+        if target_path is None and output_format is None and not transcribe_only:
+            target_path = _default_report_path(input_path, resolved_format)
+        recorder.set_output_path(target_path)
+        recorder.set_checkpoint_path(state.checkpoint_path)
+        _write_or_echo(rendered_output, target_path)
+        recorder.finish_success(state)
+    except Exception as exc:
+        recorder.finish_failure(exc)
+        raise
 
 
 @cli.command()
@@ -291,46 +343,76 @@ def transcribe(
 ) -> None:
     """Run only the transcription stage."""
 
-    overrides = _build_overrides(
-        languages=languages,
-        output_format=None,
-        output_path=None,
-        participants=(),
-        meeting_date_value=None,
-        anonymize_speakers=False,
-    )
-    config = load_config(config_path=config_path, overrides=overrides)
-
     if cost_estimate:
+        overrides = _build_overrides(
+            languages=languages,
+            output_format=None,
+            output_path=None,
+            participants=(),
+            meeting_date_value=None,
+            anonymize_speakers=False,
+        )
+        config = load_config(config_path=config_path, overrides=overrides)
         audio_file = AudioIngester().ingest(input_path)
         click.echo(f"Estimated total cost: ${estimate_cost(audio_file, config):.2f}")
         return
 
-    orchestrator = PipelineOrchestrator(config)
-
-    def confirm_cost(cost: float) -> bool:
-        if assume_yes:
-            return True
-        return click.confirm(f"Estimated API cost is ${cost:.2f}. Continue?", default=False)
-
-    state = orchestrator.run(
-        input_path,
-        transcribe_only=True,
+    recorder = RunRecorder(
+        command="transcribe",
+        project_root=Path.cwd().resolve(),
+        input_path=input_path,
+        config_path=config_path,
+        output_path=output_path,
         checkpoint_path=checkpoint_path,
-        resume=resume,
-        on_cost_confirm=confirm_cost,
     )
-    if state is None or state.transcript is None:
-        click.echo("No transcript produced.", err=True)
-        return
+    try:
+        overrides = _build_overrides(
+            languages=languages,
+            output_format=None,
+            output_path=None,
+            participants=(),
+            meeting_date_value=None,
+            anonymize_speakers=False,
+        )
+        config = load_config(config_path=config_path, overrides=overrides)
+        orchestrator = PipelineOrchestrator(config)
 
-    resolved_format = (
-        output_format.lower()
-        if output_format is not None
-        else ("json" if output_path and output_path.suffix.lower() == ".json" else "text")
-    )
-    payload = _render_transcript_payload(state.transcript, resolved_format)
-    _write_or_echo(payload, output_path)
+        def confirm_cost(cost: float) -> bool:
+            if assume_yes:
+                return True
+            return click.confirm(f"Estimated API cost is ${cost:.2f}. Continue?", default=False)
+
+        state = orchestrator.run(
+            input_path,
+            transcribe_only=True,
+            checkpoint_path=checkpoint_path,
+            resume=resume,
+            on_cost_confirm=confirm_cost,
+            on_stage_start=recorder.stage_started,
+            on_stage_complete=recorder.stage_completed,
+        )
+        if state is None:
+            recorder.finish_cancelled()
+            click.echo("Transcription cancelled before the first billable stage.", err=True)
+            return
+        if state.transcript is None:
+            recorder.finish_failure(ProcessingError("No transcript produced."))
+            click.echo("No transcript produced.", err=True)
+            return
+
+        resolved_format = (
+            output_format.lower()
+            if output_format is not None
+            else ("json" if output_path and output_path.suffix.lower() == ".json" else "text")
+        )
+        payload = _render_transcript_payload(state.transcript, resolved_format)
+        recorder.set_output_path(output_path)
+        recorder.set_checkpoint_path(state.checkpoint_path)
+        _write_or_echo(payload, output_path)
+        recorder.finish_success(state)
+    except Exception as exc:
+        recorder.finish_failure(exc)
+        raise
 
 
 @cli.command()
@@ -512,6 +594,152 @@ def clear_cache(config_path: Path | None, assume_yes: bool) -> None:
         return
     cache.clear()
     click.echo("Cache cleared.")
+
+
+@cli.command()
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def doctor(config_path: Path | None, project_root: Path | None, as_json: bool) -> None:
+    """Check local readiness for operator-driven parler runs."""
+
+    report = run_doctor((project_root or Path.cwd()).resolve(), config_path=config_path)
+    if as_json:
+        _echo_json(
+            {
+                "ready": report.ready,
+                "project_root": report.project_root,
+                "env_file": report.env_file,
+                "config_path": report.config_path,
+                "cache_directory": report.cache_directory,
+                "run_directory": report.run_directory,
+                "temp_audio_directory": report.temp_audio_directory,
+                "checks": report.checks,
+            }
+        )
+    else:
+        click.echo(format_doctor_report(report))
+    if not report.ready:
+        raise SystemExit(1)
+
+
+@cli.group()
+def runs() -> None:
+    """Inspect local `.parler-runs` artifacts."""
+
+
+@runs.command("list")
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+)
+@click.option("--limit", type=click.IntRange(min=1), default=20, show_default=True)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def list_runs(project_root: Path | None, limit: int, as_json: bool) -> None:
+    """List recent run artifact bundles."""
+
+    summaries = iter_run_summaries((project_root or Path.cwd()).resolve())[:limit]
+    if as_json:
+        _echo_json(summaries)
+        return
+    if not summaries:
+        click.echo("No recorded runs found.")
+        return
+    click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
+    for summary in summaries:
+        click.echo(_format_run_summary(summary))
+
+
+@runs.command("show")
+@click.argument("trace_id")
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def show_runs(trace_id: str, project_root: Path | None, as_json: bool) -> None:
+    """Show one recorded run summary."""
+
+    try:
+        summary = load_run_summary(trace_id, (project_root or Path.cwd()).resolve())
+    except FileNotFoundError as exc:
+        raise ProcessingError(f"Run not found: {trace_id}") from exc
+    if as_json:
+        _echo_json(summary)
+        return
+    click.echo(f"Trace ID: {summary.get('trace_id', trace_id)}")
+    click.echo(f"Command: {summary.get('command', '-')}")
+    click.echo(f"Status: {summary.get('status', '-')}")
+    click.echo(f"Started: {summary.get('started_at', '-')}")
+    click.echo(f"Finished: {summary.get('finished_at', '-')}")
+    click.echo(f"Input: {summary.get('input_path', '-')}")
+    click.echo(f"Output: {summary.get('output_path', '-')}")
+    click.echo(f"Checkpoint: {summary.get('checkpoint_path', '-')}")
+    click.echo(f"Events: {summary.get('events_path', '-')}")
+    stages = summary.get("stages", {})
+    if isinstance(stages, dict) and stages:
+        click.echo("Stages:")
+        for stage_name, stage_data in stages.items():
+            if isinstance(stage_data, dict):
+                click.echo(
+                    f"  {stage_name}: {stage_data.get('status', '-')} "
+                    f"({stage_data.get('duration_s', '-')})"
+                )
+
+
+@cli.command()
+@click.option("--runs/--no-runs", default=True, help="Prune stale `.parler-runs` bundles.")
+@click.option(
+    "--temp-audio/--no-temp-audio",
+    default=True,
+    help="Prune stale normalized temp audio files.",
+)
+@click.option(
+    "--older-than-days",
+    type=click.FloatRange(min=0.0),
+    default=7.0,
+    show_default=True,
+    help="Delete artifacts older than this many days.",
+)
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def cleanup(
+    runs: bool,
+    temp_audio: bool,
+    older_than_days: float,
+    project_root: Path | None,
+    as_json: bool,
+) -> None:
+    """Prune stale local run artifacts and normalized temp audio."""
+
+    resolved_project_root = (project_root or Path.cwd()).resolve()
+    removed_runs = (
+        prune_run_summaries(older_than_days=older_than_days, project_root=resolved_project_root)
+        if runs
+        else 0
+    )
+    removed_temp_audio = (
+        prune_managed_audio_files(older_than_days=older_than_days) if temp_audio else 0
+    )
+    payload = {
+        "older_than_days": older_than_days,
+        "removed_runs": removed_runs,
+        "removed_temp_audio": removed_temp_audio,
+    }
+    if as_json:
+        _echo_json(payload)
+        return
+    click.echo(f"Removed {removed_runs} run bundle(s) and {removed_temp_audio} temp audio file(s).")
 
 
 @cli.command()

@@ -28,6 +28,7 @@
 - Phase 1 through Phase 7 core surfaces are implemented in the runtime package: `parler/` now includes canonical models, errors, config loading, local serialization/hashing, stable Markdown/HTML/JSON rendering, explicit pipeline state/checkpoint helpers, audio ingestion, FFmpeg helpers, retry utilities, transcription assembly, quality evaluation, semantic transcript caching, speaker-attribution heuristics, extraction deadline resolution, defensive extraction parsing, Mistral-backed decision extraction, export adapters, canonical CLI commands, prompt scaffolding, and compatibility shims.
 - Phase 8 verification scaffolding is now present: legacy `PipelineConfig` compatibility, synthetic fixture generation/recording scripts, placeholder fixture directories, benchmark baseline support, a manual GitHub Actions workflow for live E2E/benchmark runs, and a first-class Textual TUI surface.
 - `.env.example` and `CHANGELOG.md` now exist as first-class repo surfaces; CLI, TUI, and `parler-e2e` auto-load `.env` from the current project root.
+- Local operational tooling now exists for operator-driven runs: `parler doctor`, `.parler-runs/` trace bundles, and `parler cleanup` for stale run/temp-audio pruning.
 - Checkpoints now serialize audio metadata as well as the audio hash, resume rejects incomplete or inconsistent checkpoint payloads, and local cache/checkpoint JSON writes use restrictive permissions where the host platform allows them.
 - Remaining unfinished work is now mostly live-asset provisioning and higher-level hardening, not missing core pipeline stages.
 - The deadline test drift from earlier Phase 5 work is reconciled locally: the suite now treats `2026-04-09` as Thursday, which matches the implemented resolver and the broader parametrized/property contract.
@@ -74,6 +75,7 @@ features/                # BDD acceptance contracts [gated]
 tests/                   # pytest TDD/integration/property/E2E/benchmark contracts [gated]
 tests/fixtures/          # Synthetic fixture policy; actual audio/transcript assets mostly missing [gated]
 parler/                  # Runtime package; Phase 1-8 runtime and TUI surfaces exist [agent: modify]
+.parler-runs/            # Local run summaries + event streams [forbidden to commit]
 .codex/skills/           # Repo-local agent skills [agent: create/modify]
 .claude/skills -> ../.codex/skills
 .agents/skills -> ../.codex/skills
@@ -121,6 +123,9 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | Generate synthetic fixtures | `uv run python tests/fixtures/generate_fixtures.py --all` | Phase 8 | audio generation needs `gtts` or `say`/`espeak` plus `ffmpeg`; silence fixture works with stdlib only |
 | Local E2E runner | `uv run parler-e2e` | Phase 8 | loads `.env`, verifies `ffprobe`, auto-generates missing fixtures, and defaults extraction to `mistral-medium-latest` |
 | Launch TUI | `uv run parler tui` | now | Textual cockpit with fixture presets, stage progress, results, and artifact browsing |
+| Local readiness check | `uv run parler doctor` | now | verifies API key source, config readability, writable local artifact dirs, FFmpeg presence, and temp-audio backlog |
+| Inspect run traces | `uv run parler runs list && uv run parler runs show <trace_id>` | now | local `.parler-runs/` summaries for `process`, `transcribe`, and TUI runs |
+| Prune stale local artifacts | `uv run parler cleanup --older-than-days 7` | now | removes old `.parler-runs/` bundles and normalized temp audio |
 | Benchmarks | `uv run pytest tests/benchmarks/test_performance.py -q -m benchmark --benchmark-json /tmp/parler-benchmark-raw.json && uv run python tests/benchmarks/update_baseline.py /tmp/parler-benchmark-raw.json tests/benchmarks/baseline.json` | Phase 8 | writes the reviewed summary baseline JSON |
 | Smoke test editable install | `uv run python tests/smoke_test.py` | now | exercises import surface and CLI help |
 | Fast verification | `uv run pytest tests/unit tests/integration tests/property features -v --cov=parler` | Phase 8+ | widen only as later domains land |
@@ -208,6 +213,7 @@ Commands marked `Phase 8+` assume later domain modules exist. Phase 1 through Ph
 | `.codex/skills/`, `CLAUDE.md`, `agents.md` | autonomous | repo-local agent context |
 | `README.md`, `SPEC.md`, `SDD.md`, `TESTING.md`, `IMPLEMENTATION_PLAN.md`, `pyproject.toml` | gated | public/tooling/canonical contract files |
 | `rfcs/`, `features/`, `tests/`, `tests/fixtures/` | gated | contract and verification artifacts; update deliberately |
+| `.parler-runs/`, `.parler-cache/`, `.parler-state.json` | forbidden | local sensitive operator artifacts; inspect only when explicitly needed |
 | `.env`, `.env.*`, `*.pem`, `*.key`, real recordings, real transcript dumps, real checkpoints/caches | forbidden | secrets or sensitive data |
 
   </zones>

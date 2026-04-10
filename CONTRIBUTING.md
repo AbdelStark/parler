@@ -8,6 +8,7 @@
 uv python install
 uv sync --locked --group dev
 cp .env.example .env
+uv run parler doctor
 ```
 
 This creates `.venv/`, installs the project in editable mode, and gives you a
@@ -25,6 +26,9 @@ uv run python tests/fixtures/generate_fixtures.py --all
 uv run parler-e2e
 uv run parler-e2e tests/e2e/test_full_pipeline_fr.py -q
 uv run parler tui
+uv run parler doctor
+uv run parler runs list
+uv run parler cleanup --older-than-days 7
 uv run python tests/smoke_test.py
 uv run ruff check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
 uv run ruff format --check parler tests/smoke_test.py tests/unit/test_cli_commands.py tests/unit/test_e2e_runner.py tests/unit/test_pipeline_config_compat.py tests/fixtures/generate_fixtures.py tests/fixtures/record_voxtral.py tests/fixtures/record_extraction.py
@@ -39,6 +43,7 @@ The wider `tests/`, `features/`, and roadmap modules still contain future-facing
 - Keep changes traceable to `SPEC.md`, `SDD.md`, and `TESTING.md`.
 - Prefer narrow, test-backed vertical slices over wide speculative scaffolding.
 - Treat local caches and checkpoints as sensitive data; never commit them.
+- Treat `.parler-runs/` and normalized temp audio as local troubleshooting artifacts; inspect or prune them, but never commit them.
 - Do not commit real audio, transcripts, secrets, or third-party API tokens.
 
 ## Releases

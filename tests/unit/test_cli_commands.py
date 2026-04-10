@@ -21,7 +21,8 @@ from parler.models import (
     Transcript,
     TranscriptSegment,
 )
-from parler.pipeline.state import ProcessingState, save_processing_state
+from parler.pipeline.state import PipelineStage, ProcessingState, save_processing_state
+from parler.runlog import RunRecorder
 
 
 def make_audio_file(path: str = "/tmp/meeting.mp3") -> AudioFile:
@@ -197,6 +198,38 @@ class TestProcessCommand:
         assert "1.23" in result.output
         mock_orchestrator.assert_not_called()
 
+    def test_process_records_run_artifacts(self) -> None:
+        runner = CliRunner()
+        state = make_state(decision_log=make_decision_log(), report="# Decision Log\n")
+
+        def fake_run(*args, **kwargs):
+            del args
+            kwargs["on_stage_start"](PipelineStage.INGEST)
+            kwargs["on_stage_complete"](PipelineStage.INGEST, 0.125)
+            kwargs["on_stage_start"](PipelineStage.TRANSCRIBE)
+            kwargs["on_stage_complete"](PipelineStage.TRANSCRIBE, 0.5)
+            return state
+
+        with runner.isolated_filesystem():
+            with (
+                patch("parler.cli.load_config", return_value=make_config()),
+                patch("parler.cli.PipelineOrchestrator") as mock_orchestrator,
+            ):
+                mock_orchestrator.return_value.run.side_effect = fake_run
+                result = runner.invoke(cli, ["process", "meeting.mp3"])
+
+            assert result.exit_code == 0
+            summaries = sorted(Path(".parler-runs").glob("*/run.json"))
+            assert len(summaries) == 1
+            payload = json.loads(summaries[0].read_text(encoding="utf-8"))
+            assert payload["command"] == "process"
+            assert payload["status"] == "completed"
+            assert payload["result"]["decision_log"]["decision_count"] == 1
+            assert payload["stages"]["INGEST"]["status"] == "completed"
+            events = summaries[0].with_name("events.jsonl").read_text(encoding="utf-8")
+            assert "stage_started" in events
+            assert "run_completed" in events
+
 
 class TestTranscribeCommand:
     def test_transcribe_json_output_contains_transcript_not_decisions(self, tmp_path: Path) -> None:
@@ -292,6 +325,66 @@ class TestCacheCommands:
 
         assert clear_result.exit_code == 0
         assert not any(cache_dir.glob("*.json"))
+
+
+class TestOperationalCommands:
+    def test_doctor_fails_without_api_key(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem(), patch.dict(os.environ, {}, clear=True):
+            result = runner.invoke(cli, ["doctor", "--json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["ready"] is False
+        failing_checks = [check for check in payload["checks"] if check["status"] == "fail"]
+        assert any(check["name"] == "API key" for check in failing_checks)
+
+    def test_doctor_json_reports_ready_state(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        (tmp_path / ".env").write_text("MISTRAL_API_KEY=test-key\n", encoding="utf-8")
+
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}, clear=True):
+            result = runner.invoke(cli, ["doctor", "--project-root", str(tmp_path), "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["ready"] is True
+        assert any(
+            check["name"] == "API key" and check["status"] == "pass" for check in payload["checks"]
+        )
+
+    def test_runs_list_show_and_cleanup(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            recorder = RunRecorder(
+                command="process",
+                project_root=Path.cwd(),
+                input_path=Path("meeting.mp3"),
+            )
+            recorder.finish_cancelled()
+
+            list_result = runner.invoke(cli, ["runs", "list"])
+            show_result = runner.invoke(cli, ["runs", "show", recorder.trace_id, "--json"])
+            with (
+                patch("parler.cli.prune_run_summaries", return_value=2),
+                patch("parler.cli.prune_managed_audio_files", return_value=3),
+            ):
+                cleanup_result = runner.invoke(cli, ["cleanup", "--json"])
+
+        assert list_result.exit_code == 0
+        assert recorder.trace_id in list_result.output
+
+        assert show_result.exit_code == 0
+        payload = json.loads(show_result.output)
+        assert payload["trace_id"] == recorder.trace_id
+        assert payload["status"] == "cancelled"
+
+        assert cleanup_result.exit_code == 0
+        cleanup_payload = json.loads(cleanup_result.output)
+        assert cleanup_payload["removed_runs"] == 2
+        assert cleanup_payload["removed_temp_audio"] == 3
 
 
 class TestCliMain:
