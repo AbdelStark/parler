@@ -1382,9 +1382,7 @@ class ParlerTUIApp(App[None]):
                 model_line = f"\n[dim]Speech→text[/dim]  {t}"
             else:
                 model_line = (
-                    f"\n[dim]Speech→text[/dim]  {t}  "
-                    f"[dim]→[/dim]  "
-                    f"[dim]Extraction[/dim]  {e}"
+                    f"\n[dim]Speech→text[/dim]  {t}  [dim]→[/dim]  [dim]Extraction[/dim]  {e}"
                 )
         else:
             e_short = _MODEL_SHORT.get(report_model, report_model)

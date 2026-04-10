@@ -230,7 +230,9 @@ class DecisionExtractor:
         self.max_tokens = max_tokens
         self.multi_pass_threshold = multi_pass_threshold
         self.cache = cache
-        self._local_runtime = LocalVoxtralRuntime(local_repo_id(model)) if is_local_model(model) else None
+        self._local_runtime = (
+            LocalVoxtralRuntime(local_repo_id(model)) if is_local_model(model) else None
+        )
         self._client = None if self._local_runtime is not None else MistralClient(api_key=api_key)
 
     def _transcript_hash(self, transcript: Transcript) -> str:
@@ -499,7 +501,9 @@ class DecisionExtractor:
         decisions: list[Decision] = []
         for decision_item in log.decisions:
             recovered_summary = _extract_decision_summary(decision_item.quote)
-            if recovered_summary is not None and _contains_rejection_language(decision_item.summary):
+            if recovered_summary is not None and _contains_rejection_language(
+                decision_item.summary
+            ):
                 decision_item = replace(
                     decision_item,
                     summary=recovered_summary,
@@ -568,10 +572,14 @@ class DecisionExtractor:
                     )
 
             normalized_question = _normalize_question_text(segment.text)
-            if "?" in segment.text and _extract_commitment_action(next_text) is None and not any(
-                _texts_overlap(normalized_question, item.question)
-                or _texts_overlap(normalized_question, item.quote)
-                for item in recovered_questions
+            if (
+                "?" in segment.text
+                and _extract_commitment_action(next_text) is None
+                and not any(
+                    _texts_overlap(normalized_question, item.question)
+                    or _texts_overlap(normalized_question, item.quote)
+                    for item in recovered_questions
+                )
             ):
                 recovered_questions.append(
                     OpenQuestion(
@@ -594,7 +602,8 @@ class DecisionExtractor:
             ):
                 continue
             if _contains_rejection_language(segment.text) and not any(
-                _texts_overlap(segment.text, item.summary) or _texts_overlap(segment.text, item.quote)
+                _texts_overlap(segment.text, item.summary)
+                or _texts_overlap(segment.text, item.quote)
                 for item in recovered_rejections
             ):
                 recovered_rejections.append(

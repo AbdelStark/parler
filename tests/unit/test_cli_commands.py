@@ -299,7 +299,9 @@ class TestProcessCommand:
                 "extraction=mistral-medium-latest"
             ) in result.stderr
             assert "[verbose] trace_id=" in result.stderr
-            assert "[verbose] ingest: meeting.mp3 (probe input and normalize audio)" in result.stderr
+            assert (
+                "[verbose] ingest: meeting.mp3 (probe input and normalize audio)" in result.stderr
+            )
             assert (
                 "[verbose] transcribe: model=voxtral-mini-latest languages=auto cache=on"
             ) in result.stderr
@@ -309,7 +311,9 @@ class TestProcessCommand:
                 "meeting_date=unspecified cache=on"
             ) in result.stderr
             assert "[verbose] render: format=markdown" in result.stderr
-            assert "[verbose] transcript=segments=1 language=fr detected=fr model=-" in result.stderr
+            assert (
+                "[verbose] transcript=segments=1 language=fr detected=fr model=-" in result.stderr
+            )
             assert (
                 "[verbose] decision_log=decisions=1 commitments=1 questions=0 "
                 "rejected=0 model=mistral-large-latest"
@@ -383,10 +387,14 @@ class TestTranscribeCommand:
                 "languages=auto cache_dir=.parler-cache"
             ) in result.stderr
             assert "[verbose] trace_id=" in result.stderr
-            assert "[verbose] ingest: meeting.mp3 (probe input and normalize audio)" in result.stderr
+            assert (
+                "[verbose] ingest: meeting.mp3 (probe input and normalize audio)" in result.stderr
+            )
             assert "[verbose] ingest: complete in 0.25s" in result.stderr
             assert "[verbose] reused completed stages from checkpoint: transcribe" in result.stderr
-            assert "[verbose] transcript=segments=1 language=fr detected=fr model=-" in result.stderr
+            assert (
+                "[verbose] transcript=segments=1 language=fr detected=fr model=-" in result.stderr
+            )
             assert "[verbose] wrote_output=transcript.txt" in result.stderr
 
 

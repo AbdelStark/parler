@@ -264,10 +264,14 @@ class VoxtralTranscriber:
         self.timeout_ms = timeout_ms
         self.quality_checker = TranscriptQualityChecker()
         self.last_quality_report: TranscriptQualityReport | None = None
-        self._local_runtime = LocalVoxtralRuntime(local_repo_id(model)) if is_local_model(model) else None
+        self._local_runtime = (
+            LocalVoxtralRuntime(local_repo_id(model)) if is_local_model(model) else None
+        )
         self._client = None if self._local_runtime is not None else MistralClient(api_key=api_key)
 
-    def _transcribe_local(self, audio_file: AudioFile, languages: Iterable[str] | None) -> Transcript:
+    def _transcribe_local(
+        self, audio_file: AudioFile, languages: Iterable[str] | None
+    ) -> Transcript:
         assert self._local_runtime is not None
         requested_languages = _requested_languages(languages)
         requested_language = requested_languages[0] if len(requested_languages) == 1 else None

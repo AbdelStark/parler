@@ -129,7 +129,9 @@ def _decode_audio_with_ffmpeg(source: Path, destination: Path) -> Path:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or "").strip()
         suffix = f": {detail}" if detail else ""
-        raise ProcessingError(f"FFmpeg could not decode {source.name} for local mode{suffix}") from exc
+        raise ProcessingError(
+            f"FFmpeg could not decode {source.name} for local mode{suffix}"
+        ) from exc
     except FileNotFoundError as exc:
         raise EnvironmentError(
             f"Local mode requires FFmpeg to decode {source.suffix or 'audio'} inputs. {_FFMPEG_INSTALL_HINT}"

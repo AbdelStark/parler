@@ -194,7 +194,9 @@ def _describe_state(state: ProcessingState, *, transcribe_only: bool) -> tuple[s
             f"hash={state.audio_file.content_hash}"
         )
     if state.transcript is not None:
-        languages = ",".join(state.transcript.detected_languages) or state.transcript.language or "-"
+        languages = (
+            ",".join(state.transcript.detected_languages) or state.transcript.language or "-"
+        )
         details.append(
             "transcript="
             f"segments={len(state.transcript.segments)} language={state.transcript.language or '-'} "
@@ -294,7 +296,9 @@ def cli() -> None:
 @click.option("--anonymize-speakers", is_flag=True, help="Replace speaker names in outputs.")
 @click.option("--cost-estimate", is_flag=True, help="Print estimated cost without API calls.")
 @click.option("--yes", "assume_yes", is_flag=True, help="Auto-confirm cost prompts.")
-@click.option("--local", is_flag=True, help="Run transcription and extraction with a local Voxtral model.")
+@click.option(
+    "--local", is_flag=True, help="Run transcription and extraction with a local Voxtral model."
+)
 @click.option("-v", "--verbose", is_flag=True, help="Log pipeline stages and runtime details.")
 def process(
     input_path: Path,
@@ -470,7 +474,9 @@ def process(
                     enabled=verbose,
                 )
         if transcribe_only:
-            _emit_verbose("mode=transcribe-only; later pipeline stages were skipped", enabled=verbose)
+            _emit_verbose(
+                "mode=transcribe-only; later pipeline stages were skipped", enabled=verbose
+            )
         elif no_diarize:
             _emit_verbose("attribute stage skipped because --no-diarize was set", enabled=verbose)
         for detail in _describe_state(state, transcribe_only=transcribe_only):
@@ -620,7 +626,9 @@ def transcribe(
         )
         if state is None:
             recorder.finish_cancelled()
-            _emit_verbose("transcription cancelled before the first billable stage", enabled=verbose)
+            _emit_verbose(
+                "transcription cancelled before the first billable stage", enabled=verbose
+            )
             click.echo("Transcription cancelled before the first billable stage.", err=True)
             return
         if state.transcript is None:
