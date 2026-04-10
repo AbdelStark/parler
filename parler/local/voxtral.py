@@ -12,8 +12,6 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from ..audio.ffmpeg import ffmpeg_available
 from ..errors import EnvironmentError, ProcessingError
 
@@ -56,6 +54,16 @@ def _import_local_stack() -> tuple[Any, Any, Any]:
     return torch, auto_processor_class, voxtral_model_class
 
 
+def _import_numpy() -> Any:
+    try:
+        return import_module("numpy")
+    except ImportError as exc:
+        raise EnvironmentError(
+            "Local mode requires `numpy` for waveform decoding. "
+            "Install it with `uv add numpy` or include the full local inference stack."
+        ) from exc
+
+
 def _preferred_device(torch_module: Any) -> tuple[str, Any]:
     if torch_module.cuda.is_available():
         is_bf16_supported = getattr(torch_module.cuda, "is_bf16_supported", lambda: False)
@@ -76,7 +84,8 @@ def _load_model(model_class: Any, repo_id: str, *, dtype: Any) -> Any:
         return model_class.from_pretrained(repo_id, torch_dtype=dtype)
 
 
-def _waveform_dtype(sample_width: int) -> tuple[np.dtype[Any], float]:
+def _waveform_dtype(sample_width: int) -> tuple[Any, float]:
+    np = _import_numpy()
     if sample_width == 1:
         return np.dtype(np.uint8), 128.0
     if sample_width == 2:
@@ -86,7 +95,8 @@ def _waveform_dtype(sample_width: int) -> tuple[np.dtype[Any], float]:
     raise ProcessingError(f"Unsupported WAV sample width for local transcription: {sample_width}")
 
 
-def _read_wav_mono(path: Path) -> np.ndarray[Any, np.dtype[np.float32]]:
+def _read_wav_mono(path: Path) -> Any:
+    np = _import_numpy()
     with wave.open(str(path), "rb") as handle:
         sample_width = handle.getsampwidth()
         channels = handle.getnchannels()
@@ -139,7 +149,7 @@ def _decode_audio_with_ffmpeg(source: Path, destination: Path) -> Path:
     return destination
 
 
-def _load_audio_waveform(audio_path: Path) -> np.ndarray[Any, np.dtype[np.float32]]:
+def _load_audio_waveform(audio_path: Path) -> Any:
     if not audio_path.exists():
         raise ProcessingError(f"Audio file not found: {audio_path}")
     if audio_path.suffix.lower() == ".wav":
