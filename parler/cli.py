@@ -854,8 +854,7 @@ def review(
             click.echo("\nOpen questions:")
             for q in open_questions:
                 click.echo(
-                    f"  [{q.id}] {q.question}"
-                    + (f" (asked by {q.asked_by})" if q.asked_by else "")
+                    f"  [{q.id}] {q.question}" + (f" (asked by {q.asked_by})" if q.asked_by else "")
                 )
         click.echo()
 
@@ -890,7 +889,10 @@ def review(
             elif action == "edit":
                 target = next((d for d in decisions if d.id == item_id), None)
                 if target is None:
-                    click.echo(f"No decision found with ID {item_id!r} (only decisions can be edited).", err=True)
+                    click.echo(
+                        f"No decision found with ID {item_id!r} (only decisions can be edited).",
+                        err=True,
+                    )
                     continue
                 new_summary = click.prompt("New summary", default=target.summary)
                 new_speaker = click.prompt("New speaker", default=target.speaker or "")
@@ -1220,13 +1222,15 @@ def roster_list(as_json: bool) -> None:
     click.echo("name\trole\tteam\taliases\tadded_at")
     for entry in entries:
         click.echo(
-            "\t".join([
-                entry.name,
-                entry.role or "-",
-                entry.team or "-",
-                ",".join(entry.aliases) or "-",
-                entry.added_at,
-            ])
+            "\t".join(
+                [
+                    entry.name,
+                    entry.role or "-",
+                    entry.team or "-",
+                    ",".join(entry.aliases) or "-",
+                    entry.added_at,
+                ]
+            )
         )
 
 
