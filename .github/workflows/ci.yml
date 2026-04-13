@@ -67,6 +67,7 @@ jobs:
           tests/unit/test_pipeline_config_compat.py
           tests/unit/test_cli_commands.py
           tests/unit/test_e2e_runner.py
+          tests/unit/test_local_voxtral_runtime.py
           tests/unit/test_tui_app.py
           tests/unit/test_report_rendering.py
           tests/unit/test_pipeline_orchestration.py
@@ -85,6 +86,11 @@ jobs:
           tests/property/test_deadline_resolver_properties.py
           tests/property/test_parsing_properties.py
           -v --cov=parler --cov-report=term-missing
+
+      - name: Verify coverage baselines
+        run: >
+          uv run coverage json --fail-under=0 -o coverage.json &&
+          uv run python tests/check_coverage_baselines.py coverage.json
 
       - name: Smoke test editable install
         run: uv run python tests/smoke_test.py

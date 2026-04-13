@@ -101,6 +101,10 @@ uv run python tests/fixtures/generate_fixtures.py --all
 | `parler.pipeline.orchestrator` | ≥ 85% | ≥ 80% |
 | `parler.cli` | ≥ 85% | ≥ 75% |
 
+CI currently enforces non-regression baselines for these modules via
+`tests/check_coverage_baselines.py`. Raise those baselines as coverage improves;
+the table above remains the longer-term target.
+
 ## Test data policy
 
 - Deterministic contract fixtures are synthetic unless a test explicitly states otherwise

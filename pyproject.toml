@@ -147,13 +147,13 @@ omit = [
 show_missing = true
 skip_covered = false
 precision = 1
-fail_under = 90
 
 [tool.coverage.paths]
 source = ["parler", "*/site-packages/parler"]
 
-# Per-module coverage targets (enforced in CI via coverage.xml parsing)
-# See .github/workflows/test.yml
+# Per-module coverage baselines are enforced in CI via
+# tests/check_coverage_baselines.py against coverage.json.
+# The values there are non-regression floors for the currently tested slice.
 # parler.audio.ingester:          line=95, branch=90
 # parler.transcription.*:         line=90, branch=85
 # parler.extraction.extractor:    line=95, branch=90
