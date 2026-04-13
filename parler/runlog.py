@@ -215,6 +215,44 @@ def iter_run_summaries(project_root: Path | None = None) -> list[dict[str, Any]]
     return summaries
 
 
+def search_run_summaries(
+    *,
+    project_root: Path | None = None,
+    status: str | None = None,
+    command: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
+    input_pattern: str | None = None,
+    language: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Filter run summaries by one or more criteria."""
+    results = []
+    for summary in iter_run_summaries(project_root):
+        if status is not None and summary.get("status") != status:
+            continue
+        if command is not None and summary.get("command") != command:
+            continue
+        started = summary.get("started_at", "")
+        if since is not None and isinstance(started, str) and started < since:
+            continue
+        if before is not None and isinstance(started, str) and started >= before:
+            continue
+        if input_pattern is not None:
+            input_path = summary.get("input_path")
+            if input_path is None or input_pattern not in Path(str(input_path)).name:
+                continue
+        if language is not None:
+            result = summary.get("result")
+            if not isinstance(result, dict):
+                continue
+            transcript = result.get("transcript")
+            if not isinstance(transcript, dict) or transcript.get("language") != language:
+                continue
+        results.append(summary)
+    return results[:limit]
+
+
 def load_run_summary(trace_id: str, project_root: Path | None = None) -> dict[str, Any]:
     summary_path = default_run_directory(project_root) / trace_id / "run.json"
     return cast(dict[str, Any], read_json(summary_path))
@@ -244,4 +282,5 @@ __all__ = [
     "iter_run_summaries",
     "load_run_summary",
     "prune_run_summaries",
+    "search_run_summaries",
 ]

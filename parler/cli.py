@@ -20,7 +20,14 @@ from .pipeline import PipelineOrchestrator, PipelineStage, ProcessingState
 from .pipeline.orchestrator import estimate_cost
 from .pipeline.state import load_processing_state, save_processing_state
 from .rendering.renderer import OutputFormat, RenderConfig, ReportRenderer
-from .runlog import RunRecorder, iter_run_summaries, load_run_summary, prune_run_summaries
+from .roster import Roster
+from .runlog import (
+    RunRecorder,
+    iter_run_summaries,
+    load_run_summary,
+    prune_run_summaries,
+    search_run_summaries,
+)
 from .transcription.cache import TranscriptCache
 from .util.env import DEFAULT_ENV_FILE, apply_api_key_aliases, load_env_file
 from .util.serialization import to_jsonable
@@ -299,6 +306,7 @@ def cli() -> None:
 @click.option(
     "--local", is_flag=True, help="Run transcription and extraction with a local Voxtral model."
 )
+@click.option("--use-roster", is_flag=True, help="Merge roster participants into speaker hints.")
 @click.option("-v", "--verbose", is_flag=True, help="Log pipeline stages and runtime details.")
 def process(
     input_path: Path,
@@ -317,12 +325,18 @@ def process(
     cost_estimate: bool,
     assume_yes: bool,
     local: bool,
+    use_roster: bool,
     verbose: bool,
 ) -> None:
     """Process an audio file into a transcript or decision report."""
 
     project_root = Path.cwd().resolve()
     resolved_participants = _split_participants(participants, participants_csv)
+    if use_roster:
+        roster_names = tuple(Roster().all_names())
+        resolved_participants = tuple(
+            dict.fromkeys(list(resolved_participants) + list(roster_names))
+        )
     requested_format = (
         output_format.lower()
         if output_format is not None
@@ -508,6 +522,7 @@ def process(
 @click.option("--cost-estimate", is_flag=True, help="Print estimated cost without API calls.")
 @click.option("--yes", "assume_yes", is_flag=True, help="Auto-confirm cost prompts.")
 @click.option("--local", is_flag=True, help="Run transcription locally with a Voxtral model.")
+@click.option("--use-roster", is_flag=True, help="Merge roster participants into speaker hints.")
 @click.option("-v", "--verbose", is_flag=True, help="Log pipeline stages and runtime details.")
 def transcribe(
     input_path: Path,
@@ -520,16 +535,19 @@ def transcribe(
     cost_estimate: bool,
     assume_yes: bool,
     local: bool,
+    use_roster: bool,
     verbose: bool,
 ) -> None:
     """Run only the transcription stage."""
+
+    roster_participants: tuple[str, ...] = tuple(Roster().all_names()) if use_roster else ()
 
     if cost_estimate:
         overrides = _build_overrides(
             languages=languages,
             output_format=None,
             output_path=None,
-            participants=(),
+            participants=roster_participants,
             meeting_date_value=None,
             anonymize_speakers=False,
             local=local,
@@ -555,7 +573,7 @@ def transcribe(
             languages=languages,
             output_format=None,
             output_path=None,
-            participants=(),
+            participants=roster_participants,
             meeting_date_value=None,
             anonymize_speakers=False,
             local=local,
@@ -782,6 +800,128 @@ def report(
     _write_or_echo(report_text, output_path)
 
 
+@cli.command()
+@click.option(
+    "--from-state",
+    "state_path",
+    type=click.Path(path_type=Path, dir_okay=False, exists=True),
+    required=True,
+)
+@click.option("--output", "output_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", "html", "json"], case_sensitive=False),
+)
+@click.option("--yes", "assume_yes", is_flag=True, help="Approve all items without prompting.")
+def review(
+    state_path: Path,
+    output_path: Path | None,
+    output_format: str | None,
+    assume_yes: bool,
+) -> None:
+    """Interactively review and edit a decision log before export."""
+
+    from dataclasses import replace as dc_replace
+
+    state = load_processing_state(state_path)
+    if state.decision_log is None:
+        raise ProcessingError("State has no decision log to review")
+
+    log = state.decision_log
+    decisions = list(log.decisions)
+    commitments = list(log.commitments)
+    open_questions = list(log.open_questions)
+
+    def _display() -> None:
+        if decisions:
+            click.echo("\nDecisions:")
+            for d in decisions:
+                click.echo(
+                    f"  [{d.id}] {d.summary}"
+                    + (f" (speaker: {d.speaker})" if d.speaker else "")
+                    + f" [{d.confidence}]"
+                )
+        if commitments:
+            click.echo("\nCommitments:")
+            for c in commitments:
+                click.echo(
+                    f"  [{c.id}] {c.owner}: {c.action}"
+                    + (f" (by {c.deadline.raw})" if c.deadline else "")
+                    + f" [{c.confidence}]"
+                )
+        if open_questions:
+            click.echo("\nOpen questions:")
+            for q in open_questions:
+                click.echo(
+                    f"  [{q.id}] {q.question}"
+                    + (f" (asked by {q.asked_by})" if q.asked_by else "")
+                )
+        click.echo()
+
+    _display()
+
+    if not assume_yes:
+        click.echo('Commands: "delete <ID>", "edit <ID>" (decisions only), or Enter to approve.')
+        while True:
+            raw = click.prompt("Action", default="", show_default=False).strip()
+            if not raw or raw.lower() == "done":
+                break
+            parts = raw.split(None, 1)
+            if len(parts) < 2:
+                click.echo("Unknown command. Use 'delete <ID>', 'edit <ID>', or Enter.", err=True)
+                continue
+            action, item_id = parts[0].lower(), parts[1].strip()
+            if action == "delete":
+                before_d = len(decisions)
+                decisions = [d for d in decisions if d.id != item_id]
+                before_c = len(commitments)
+                commitments = [c for c in commitments if c.id != item_id]
+                before_q = len(open_questions)
+                open_questions = [q for q in open_questions if q.id != item_id]
+                if (
+                    len(decisions) == before_d
+                    and len(commitments) == before_c
+                    and len(open_questions) == before_q
+                ):
+                    click.echo(f"No item found with ID {item_id!r}.", err=True)
+                else:
+                    click.echo(f"Deleted {item_id}.")
+            elif action == "edit":
+                target = next((d for d in decisions if d.id == item_id), None)
+                if target is None:
+                    click.echo(f"No decision found with ID {item_id!r} (only decisions can be edited).", err=True)
+                    continue
+                new_summary = click.prompt("New summary", default=target.summary)
+                new_speaker = click.prompt("New speaker", default=target.speaker or "")
+                updated = dc_replace(
+                    target,
+                    summary=new_summary,
+                    speaker=new_speaker if new_speaker else None,
+                )
+                decisions = [updated if d.id == item_id else d for d in decisions]
+                click.echo(f"Updated {item_id}.")
+            else:
+                click.echo("Unknown action. Use 'delete <ID>', 'edit <ID>', or Enter.", err=True)
+
+    updated_log = dc_replace(
+        log,
+        decisions=tuple(decisions),
+        commitments=tuple(commitments),
+        open_questions=tuple(open_questions),
+    )
+    updated_state = dc_replace(state, decision_log=updated_log)
+    save_processing_state(state_path, updated_state)
+
+    resolved_format = _infer_report_format(
+        output_format.lower() if output_format is not None else None,
+        output_path,
+        default="markdown",
+    )
+    report_text = _render_decision_log_payload(updated_log, output_format=resolved_format)
+    _write_or_echo(report_text, output_path)
+
+
 @cli.group()
 def config() -> None:
     """Inspect and validate parler configuration."""
@@ -946,6 +1086,54 @@ def show_runs(trace_id: str, project_root: Path | None, as_json: bool) -> None:
                 )
 
 
+@runs.command("search")
+@click.option("--status", "status", default=None, help="Filter by status (e.g. completed).")
+@click.option("--command", "command", default=None, help="Filter by command (e.g. process).")
+@click.option("--since", "since", default=None, help="Only runs started on or after YYYY-MM-DD.")
+@click.option("--before", "before", default=None, help="Only runs started before YYYY-MM-DD.")
+@click.option("--input", "input_pattern", default=None, help="Substring match on input filename.")
+@click.option("--language", "language", default=None, help="Filter by transcript language code.")
+@click.option("--limit", type=click.IntRange(min=1), default=20, show_default=True)
+@click.option(
+    "--project-root",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    default=None,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def search_runs(
+    status: str | None,
+    command: str | None,
+    since: str | None,
+    before: str | None,
+    input_pattern: str | None,
+    language: str | None,
+    limit: int,
+    project_root: Path | None,
+    as_json: bool,
+) -> None:
+    """Search run history by status, command, date, or input file."""
+
+    summaries = search_run_summaries(
+        project_root=(project_root or Path.cwd()).resolve(),
+        status=status,
+        command=command,
+        since=since,
+        before=before,
+        input_pattern=input_pattern,
+        language=language,
+        limit=limit,
+    )
+    if as_json:
+        _echo_json(summaries)
+        return
+    if not summaries:
+        click.echo("No matching runs found.")
+        return
+    click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
+    for summary in summaries:
+        click.echo(_format_run_summary(summary))
+
+
 @cli.command()
 @click.option("--runs/--no-runs", default=True, help="Prune stale `.parler-runs` bundles.")
 @click.option(
@@ -993,6 +1181,89 @@ def cleanup(
         _echo_json(payload)
         return
     click.echo(f"Removed {removed_runs} run bundle(s) and {removed_temp_audio} temp audio file(s).")
+
+
+@cli.group()
+def roster() -> None:
+    """Manage the persistent participant roster (~/.parler/roster.json)."""
+
+
+@roster.command("add")
+@click.argument("name")
+@click.option("--alias", "aliases", multiple=True, help="Alternate name. Repeat for each alias.")
+@click.option("--role", default=None, help="Role or title (e.g. PM, Engineer).")
+@click.option("--team", default=None, help="Team or department.")
+def roster_add(name: str, aliases: tuple[str, ...], role: str | None, team: str | None) -> None:
+    """Add or update a participant in the roster."""
+
+    from .roster import ParticipantEntry, Roster
+
+    entry = ParticipantEntry(name=name, aliases=list(aliases), role=role, team=team)
+    Roster().add(entry)
+    click.echo(f"Added {name!r} to roster.")
+
+
+@roster.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def roster_list(as_json: bool) -> None:
+    """List all participants in the roster."""
+
+    from .roster import Roster
+
+    entries = Roster().all_entries()
+    if as_json:
+        _echo_json([e.to_dict() for e in entries])
+        return
+    if not entries:
+        click.echo("Roster is empty.")
+        return
+    click.echo("name\trole\tteam\taliases\tadded_at")
+    for entry in entries:
+        click.echo(
+            "\t".join([
+                entry.name,
+                entry.role or "-",
+                entry.team or "-",
+                ",".join(entry.aliases) or "-",
+                entry.added_at,
+            ])
+        )
+
+
+@roster.command("remove")
+@click.argument("name")
+def roster_remove(name: str) -> None:
+    """Remove a participant from the roster by name."""
+
+    from .roster import Roster
+
+    removed = Roster().remove(name)
+    if removed:
+        click.echo(f"Removed {name!r} from roster.")
+    else:
+        click.echo(f"No entry found for {name!r}.", err=True)
+        raise SystemExit(1)
+
+
+@roster.command("show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def roster_show(name: str, as_json: bool) -> None:
+    """Show details for a single roster participant."""
+
+    from .roster import Roster
+
+    entry = Roster().find(name)
+    if entry is None:
+        raise ProcessingError(f"No roster entry found for {name!r}")
+    if as_json:
+        _echo_json(entry.to_dict())
+        return
+    click.echo(f"Name: {entry.name}")
+    click.echo(f"Role: {entry.role or '-'}")
+    click.echo(f"Team: {entry.team or '-'}")
+    click.echo(f"Aliases: {', '.join(entry.aliases) or '-'}")
+    click.echo(f"Added: {entry.added_at}")
 
 
 @cli.command()

@@ -206,6 +206,12 @@ class AudioIngester:
         if needs_ffmpeg:
             if not ffmpeg_available():
                 raise EnvironmentError(f"FFmpeg required for .{detected_format}. {_INSTALL_HINT}")
+            import sys
+
+            print(
+                "Detected video input — extracting audio track via FFmpeg...",
+                file=sys.stderr,
+            )
             original_path = path
             working_path = _convert_with_ffmpeg(path)
             detected_format = working_path.suffix.lower().lstrip(".") or "wav"

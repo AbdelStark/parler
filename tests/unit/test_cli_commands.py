@@ -552,3 +552,382 @@ class TestCliMain:
         finally:
             os.environ.clear()
             os.environ.update(previous)
+
+
+class TestRunsSearch:
+    def test_search_returns_all_when_no_filters(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            for cmd in ("process", "transcribe"):
+                rec = RunRecorder(command=cmd, project_root=Path.cwd())
+                rec.finish_cancelled()
+
+            result = runner.invoke(cli, ["runs", "search"])
+
+        assert result.exit_code == 0
+        assert "process" in result.output
+        assert "transcribe" in result.output
+
+    def test_search_filter_by_status(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec1 = RunRecorder(command="process", project_root=Path.cwd())
+            rec1.finish_cancelled()
+            rec2 = RunRecorder(command="transcribe", project_root=Path.cwd())
+            rec2.finish_failure(RuntimeError("boom"))
+
+            result = runner.invoke(cli, ["runs", "search", "--status", "cancelled"])
+
+        assert result.exit_code == 0
+        assert rec1.trace_id in result.output
+        assert "transcribe" not in result.output or "cancelled" in result.output
+
+    def test_search_filter_by_command(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec_p = RunRecorder(command="process", project_root=Path.cwd())
+            rec_p.finish_cancelled()
+            rec_t = RunRecorder(command="transcribe", project_root=Path.cwd())
+            rec_t.finish_cancelled()
+
+            result = runner.invoke(cli, ["runs", "search", "--command", "process"])
+
+        assert result.exit_code == 0
+        assert rec_p.trace_id in result.output
+        assert rec_t.trace_id not in result.output
+
+    def test_search_filter_by_input_pattern(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec = RunRecorder(
+                command="process",
+                project_root=Path.cwd(),
+                input_path=Path("/tmp/board-meeting.mp3"),
+            )
+            rec.finish_cancelled()
+            rec2 = RunRecorder(
+                command="process",
+                project_root=Path.cwd(),
+                input_path=Path("/tmp/team-standup.mp3"),
+            )
+            rec2.finish_cancelled()
+
+            result = runner.invoke(cli, ["runs", "search", "--input", "board"])
+
+        assert result.exit_code == 0
+        assert rec.trace_id in result.output
+        assert rec2.trace_id not in result.output
+
+    def test_search_json_output(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec = RunRecorder(command="process", project_root=Path.cwd())
+            rec.finish_cancelled()
+
+            result = runner.invoke(cli, ["runs", "search", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert isinstance(payload, list)
+        assert any(item["trace_id"] == rec.trace_id for item in payload)
+
+    def test_search_no_results_message(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli, ["runs", "search", "--status", "completed"])
+
+        assert result.exit_code == 0
+        assert "No matching runs found." in result.output
+
+
+class TestRosterCommands:
+    def _make_roster(self, tmp_path: Path):
+        """Return a Roster instance backed by a temp file."""
+        from parler.roster import Roster
+
+        return Roster(path=tmp_path / "roster.json")
+
+    def test_add_and_list(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            add_result = runner.invoke(
+                cli,
+                ["roster", "add", "Alice", "--role", "PM", "--team", "Product"],
+            )
+            assert add_result.exit_code == 0
+            assert "Added 'Alice' to roster." in add_result.output
+
+            list_result = runner.invoke(cli, ["roster", "list"])
+            assert list_result.exit_code == 0
+            assert "Alice" in list_result.output
+            assert "PM" in list_result.output
+
+    def test_add_with_aliases(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(
+                cli,
+                ["roster", "add", "Bob", "--alias", "Robert", "--alias", "Rob"],
+            )
+            assert result.exit_code == 0
+
+            show_result = runner.invoke(cli, ["roster", "show", "Bob"])
+            assert show_result.exit_code == 0
+            assert "Robert" in show_result.output
+
+    def test_remove_existing(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        from parler.roster import ParticipantEntry, Roster
+
+        Roster(path=roster_path).add(ParticipantEntry(name="Charlie"))
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(cli, ["roster", "remove", "Charlie"])
+            assert result.exit_code == 0
+            assert "Removed 'Charlie' from roster." in result.output
+
+    def test_remove_nonexistent(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(cli, ["roster", "remove", "NoOne"])
+            assert result.exit_code == 1
+
+    def test_list_empty(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(cli, ["roster", "list"])
+            assert result.exit_code == 0
+            assert "Roster is empty." in result.output
+
+    def test_list_json(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        from parler.roster import ParticipantEntry, Roster
+
+        Roster(path=roster_path).add(ParticipantEntry(name="Diana", role="CTO"))
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(cli, ["roster", "list", "--json"])
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            assert isinstance(payload, list)
+            assert payload[0]["name"] == "Diana"
+
+    def test_show_not_found(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            result = runner.invoke(cli, ["roster", "show", "Unknown"])
+            assert result.exit_code != 0
+
+
+class TestReviewCommand:
+    def test_review_yes_flag_approves_without_prompt(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        save_processing_state(state_path, make_state(decision_log=make_decision_log()))
+
+        result = runner.invoke(
+            cli,
+            ["review", "--from-state", str(state_path), "--yes"],
+        )
+
+        assert result.exit_code == 0
+        assert "Launch date" in result.output
+
+    def test_review_no_decision_log_raises_error(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        save_processing_state(state_path, make_state(transcript=make_transcript()))
+
+        result = runner.invoke(cli, ["review", "--from-state", str(state_path), "--yes"])
+
+        assert result.exit_code != 0
+
+    def test_review_saves_updated_state(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        save_processing_state(state_path, make_state(decision_log=make_decision_log()))
+
+        result = runner.invoke(
+            cli,
+            ["review", "--from-state", str(state_path), "--yes"],
+        )
+
+        assert result.exit_code == 0
+        saved = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "decision_log" in saved
+
+    def test_review_interactive_delete(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        save_processing_state(state_path, make_state(decision_log=make_decision_log()))
+
+        result = runner.invoke(
+            cli,
+            ["review", "--from-state", str(state_path)],
+            input="delete D1\n\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Deleted D1" in result.output
+        saved = json.loads(state_path.read_text(encoding="utf-8"))
+        decisions = saved["decision_log"]["decisions"]
+        assert all(d["id"] != "D1" for d in decisions)
+
+    def test_review_writes_output_file(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        state_path = tmp_path / ".parler-state.json"
+        output_path = tmp_path / "reviewed.md"
+        save_processing_state(state_path, make_state(decision_log=make_decision_log()))
+
+        result = runner.invoke(
+            cli,
+            ["review", "--from-state", str(state_path), "--yes", "--output", str(output_path)],
+        )
+
+        assert result.exit_code == 0
+        assert output_path.exists()
+        assert "Launch date" in output_path.read_text(encoding="utf-8")
+
+
+class TestSearchRunSummaries:
+    def test_filter_by_status(self, tmp_path: Path) -> None:
+        from parler.runlog import search_run_summaries
+
+        rec1 = RunRecorder(command="process", project_root=tmp_path)
+        rec1.finish_cancelled()
+        rec2 = RunRecorder(command="transcribe", project_root=tmp_path)
+        rec2.finish_failure(RuntimeError("err"))
+
+        results = search_run_summaries(project_root=tmp_path, status="cancelled")
+        assert len(results) == 1
+        assert results[0]["trace_id"] == rec1.trace_id
+
+    def test_filter_by_command(self, tmp_path: Path) -> None:
+        from parler.runlog import search_run_summaries
+
+        rec1 = RunRecorder(command="process", project_root=tmp_path)
+        rec1.finish_cancelled()
+        rec2 = RunRecorder(command="transcribe", project_root=tmp_path)
+        rec2.finish_cancelled()
+
+        results = search_run_summaries(project_root=tmp_path, command="process")
+        assert len(results) == 1
+        assert results[0]["command"] == "process"
+
+    def test_filter_by_input_pattern(self, tmp_path: Path) -> None:
+        from parler.runlog import search_run_summaries
+
+        rec1 = RunRecorder(
+            command="process",
+            project_root=tmp_path,
+            input_path=Path("/recordings/board-meeting.mp3"),
+        )
+        rec1.finish_cancelled()
+        rec2 = RunRecorder(
+            command="process",
+            project_root=tmp_path,
+            input_path=Path("/recordings/standup.mp3"),
+        )
+        rec2.finish_cancelled()
+
+        results = search_run_summaries(project_root=tmp_path, input_pattern="board")
+        assert len(results) == 1
+        assert rec1.trace_id == results[0]["trace_id"]
+
+    def test_limit_is_respected(self, tmp_path: Path) -> None:
+        from parler.runlog import search_run_summaries
+
+        for _ in range(5):
+            rec = RunRecorder(command="process", project_root=tmp_path)
+            rec.finish_cancelled()
+
+        results = search_run_summaries(project_root=tmp_path, limit=3)
+        assert len(results) == 3
+
+    def test_empty_directory_returns_empty(self, tmp_path: Path) -> None:
+        from parler.runlog import search_run_summaries
+
+        results = search_run_summaries(project_root=tmp_path)
+        assert results == []
+
+
+class TestRosterModule:
+    def test_add_and_find(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        roster = Roster(path=tmp_path / "roster.json")
+        roster.add(ParticipantEntry(name="Eve", role="Dev"))
+        assert roster.find("Eve") is not None
+        assert roster.find("eve") is not None  # case-insensitive
+
+    def test_find_by_alias(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        roster = Roster(path=tmp_path / "roster.json")
+        roster.add(ParticipantEntry(name="Frank", aliases=["Frankie", "F"]))
+        assert roster.find("Frankie") is not None
+        assert roster.find("f") is not None
+
+    def test_remove_returns_true(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        roster = Roster(path=tmp_path / "roster.json")
+        roster.add(ParticipantEntry(name="Grace"))
+        assert roster.remove("Grace") is True
+        assert roster.find("Grace") is None
+
+    def test_remove_missing_returns_false(self, tmp_path: Path) -> None:
+        from parler.roster import Roster
+
+        roster = Roster(path=tmp_path / "roster.json")
+        assert roster.remove("Nobody") is False
+
+    def test_all_names_includes_aliases(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        roster = Roster(path=tmp_path / "roster.json")
+        roster.add(ParticipantEntry(name="Hank", aliases=["Henry"]))
+        names = roster.all_names()
+        assert "Hank" in names
+        assert "Henry" in names
+
+    def test_persists_across_instances(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        path = tmp_path / "roster.json"
+        Roster(path=path).add(ParticipantEntry(name="Iris"))
+
+        loaded = Roster(path=path)
+        assert loaded.find("Iris") is not None
+
+    def test_duplicate_add_replaces_entry(self, tmp_path: Path) -> None:
+        from parler.roster import ParticipantEntry, Roster
+
+        path = tmp_path / "roster.json"
+        roster = Roster(path=path)
+        roster.add(ParticipantEntry(name="Jake", role="Dev"))
+        roster.add(ParticipantEntry(name="Jake", role="PM"))
+
+        entries = roster.all_entries()
+        assert len(entries) == 1
+        assert entries[0].role == "PM"
