@@ -931,3 +931,36 @@ class TestRosterModule:
         entries = roster.all_entries()
         assert len(entries) == 1
         assert entries[0].role == "PM"
+
+
+class TestCompletionCommand:
+    """Tests for `parler completion <shell>` (issue #15)."""
+
+    def test_bash_completion_emits_non_empty_output(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "bash"])
+        assert result.exit_code == 0, result.output
+        assert "_parler_completion" in result.output
+        assert "_PARLER_COMPLETE" in result.output
+
+    def test_zsh_completion_emits_zsh_specific_function(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "zsh"])
+        assert result.exit_code == 0, result.output
+        assert "_PARLER_COMPLETE" in result.output
+        # zsh helper looks like _parler_completion()
+        assert "compdef" in result.output or "_parler_completion" in result.output
+
+    def test_fish_completion_emits_fish_block(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "fish"])
+        assert result.exit_code == 0, result.output
+        assert "complete" in result.output
+        assert "_PARLER_COMPLETE" in result.output
+
+    def test_unknown_shell_exits_with_usage_error(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "tcsh"])
+        # click.Choice raises UsageError -> exit 2
+        assert result.exit_code == 2
+        assert "Invalid value" in result.output or "Usage" in result.output

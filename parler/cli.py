@@ -277,6 +277,41 @@ def cli() -> None:
     """Multilingual meeting intelligence built on Voxtral."""
 
 
+_COMPLETION_SHELLS = ("bash", "zsh", "fish")
+
+
+@cli.command()
+@click.argument("shell", type=click.Choice(_COMPLETION_SHELLS, case_sensitive=False))
+def completion(shell: str) -> None:
+    """Print a shell-completion snippet for SHELL on stdout.
+
+    SHELL is one of ``bash``, ``zsh``, ``fish``. Pipe the output into your
+    shell config to enable tab-completion for ``parler`` subcommands and
+    options:
+
+    \b
+        parler completion bash >> ~/.bash_completion
+        parler completion zsh  >> ~/.zshrc
+        parler completion fish > ~/.config/fish/completions/parler.fish
+
+    Click ships completion for these three shells out of the box, so no
+    extra dependency is needed.
+    """
+    from click.shell_completion import get_completion_class
+
+    completion_class = get_completion_class(shell.lower())
+    if completion_class is None:  # pragma: no cover - guarded by click.Choice
+        raise click.ClickException(f"Unsupported shell: {shell}")
+
+    instance = completion_class(
+        cli=cli,
+        ctx_args={},
+        prog_name="parler",
+        complete_var="_PARLER_COMPLETE",
+    )
+    click.echo(instance.source())
+
+
 @cli.command()
 @click.argument("input_path", type=click.Path(path_type=Path, dir_okay=False))
 @click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))

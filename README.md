@@ -280,6 +280,23 @@ uv run parler runs show <trace_id>
 uv run parler cleanup --older-than-days 7
 ```
 
+### Shell completion
+
+`parler` ships tab-completion snippets for `bash`, `zsh`, and `fish`. Pipe the relevant snippet into your shell config:
+
+```bash
+# bash
+parler completion bash >> ~/.bash_completion
+
+# zsh
+parler completion zsh >> ~/.zshrc
+
+# fish
+parler completion fish > ~/.config/fish/completions/parler.fish
+```
+
+After reloading your shell, tab-completion works for all `parler` subcommands and options.
+
 ---
 
 ## Development
