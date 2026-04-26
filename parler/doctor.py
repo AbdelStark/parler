@@ -14,7 +14,11 @@ from typing import Any, Literal
 
 import yaml
 
-from .audio.ffmpeg import ffmpeg_available
+from .audio.ffmpeg import (
+    MIN_RECOMMENDED_FFMPEG_VERSION,
+    detect_ffmpeg_version,
+    ffmpeg_available,
+)
 from .audio.ingester import managed_audio_directory, managed_audio_file_count
 from .runlog import default_run_directory, iter_run_summaries
 from .util.env import DEFAULT_ENV_FILE
@@ -139,6 +143,60 @@ def _check_directory_writable(
     return DoctorCheck(name=name, status="pass", detail=str(path), critical=critical)
 
 
+def _ffmpeg_toolchain_check(ffmpeg_ready: bool) -> DoctorCheck:
+    """Build the `FFmpeg toolchain` doctor check.
+
+    When ffmpeg/ffprobe are missing, the check warns and recommends
+    installing FFmpeg (unchanged from previous behavior). When they are
+    present, the check additionally runs `ffmpeg -version` so operators
+    can see exactly which build is on PATH and so we can warn about
+    versions older than {minimum} (which are missing codec features we
+    rely on).
+    """.format(minimum=".".join(str(p) for p in MIN_RECOMMENDED_FFMPEG_VERSION))
+
+    if not ffmpeg_ready:
+        return DoctorCheck(
+            name="FFmpeg toolchain",
+            status="warn",
+            detail="ffmpeg/ffprobe not found",
+            remedy="Install FFmpeg to normalize container inputs like mp4/mkv/avi.",
+        )
+
+    info = detect_ffmpeg_version()
+    if info is None:
+        # Defensive: ffmpeg_available() said yes but detect_ffmpeg_version
+        # disagreed. Report version-unknown rather than crashing the doctor.
+        return DoctorCheck(
+            name="FFmpeg toolchain",
+            status="pass",
+            detail="ffmpeg + ffprobe available (version unknown)",
+        )
+
+    if info.version is None:
+        return DoctorCheck(
+            name="FFmpeg toolchain",
+            status="pass",
+            detail="ffmpeg + ffprobe available (version unknown)",
+        )
+
+    minimum_str = ".".join(str(p) for p in MIN_RECOMMENDED_FFMPEG_VERSION)
+    if not info.is_at_least(MIN_RECOMMENDED_FFMPEG_VERSION):
+        return DoctorCheck(
+            name="FFmpeg toolchain",
+            status="warn",
+            detail=(
+                f"ffmpeg {info.version} is older than the recommended {minimum_str};"
+                " some video formats may fail."
+            ),
+            remedy=f"Upgrade FFmpeg to {minimum_str} or newer for full codec support.",
+        )
+    return DoctorCheck(
+        name="FFmpeg toolchain",
+        status="pass",
+        detail=f"ffmpeg + ffprobe available (version {info.version})",
+    )
+
+
 def _stale_managed_audio_count(directory: Path, *, older_than_days: float) -> int:
     threshold = datetime.now(UTC) - timedelta(days=older_than_days)
     return sum(
@@ -232,16 +290,7 @@ def run_doctor(project_root: Path, *, config_path: Path | None = None) -> Doctor
             )
         )
 
-    checks.append(
-        DoctorCheck(
-            name="FFmpeg toolchain",
-            status="pass" if ffmpeg_ready else "warn",
-            detail="ffmpeg + ffprobe available" if ffmpeg_ready else "ffmpeg/ffprobe not found",
-            remedy=None
-            if ffmpeg_ready
-            else "Install FFmpeg to normalize container inputs like mp4/mkv/avi.",
-        )
-    )
+    checks.append(_ffmpeg_toolchain_check(ffmpeg_ready))
     checks.append(
         _check_directory_writable(
             name="Cache directory",
