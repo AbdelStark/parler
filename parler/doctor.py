@@ -172,11 +172,20 @@ def _ffmpeg_toolchain_check(ffmpeg_ready: bool) -> DoctorCheck:
             detail="ffmpeg + ffprobe available (version unknown)",
         )
 
-    if info.version is None:
+    if info.version is None or not info.parts:
+        # Either we couldn't pull a version string at all, or the string
+        # has no numeric prefix (git/nightly builds like `n7.0-dev` may
+        # match but yield empty parts). Don't claim a version comparison
+        # we can't make.
+        version_label = info.version or "version unknown"
         return DoctorCheck(
             name="FFmpeg toolchain",
             status="pass",
-            detail="ffmpeg + ffprobe available (version unknown)",
+            detail=(
+                "ffmpeg + ffprobe available (version unknown)"
+                if info.version is None
+                else f"ffmpeg + ffprobe available ({version_label}, version unknown)"
+            ),
         )
 
     minimum_str = ".".join(str(p) for p in MIN_RECOMMENDED_FFMPEG_VERSION)

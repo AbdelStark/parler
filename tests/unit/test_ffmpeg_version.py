@@ -142,3 +142,19 @@ class TestFfmpegToolchainCheck:
             check = _ffmpeg_toolchain_check(ffmpeg_ready=True)
         assert check.status == "pass"
         assert "version unknown" in check.detail
+
+    def test_passes_with_nightly_build_has_empty_parts(self) -> None:
+        # `ffmpeg -version` git builds match `_VERSION_RE` (so `version`
+        # is set) but `_parse_version_parts` returns () for `git-...`.
+        # The check must NOT then classify it as 'older than 4.0' — that
+        # would warn against any nightly. Treat as version-unknown.
+        info = FFmpegVersion(
+            raw="ffmpeg version git-2024-01-01-abcdef ...",
+            version="git-2024-01-01-abcdef",
+            parts=(),
+        )
+        with patch("parler.doctor.detect_ffmpeg_version", return_value=info):
+            check = _ffmpeg_toolchain_check(ffmpeg_ready=True)
+        assert check.status == "pass"
+        assert "version unknown" in check.detail
+        assert "older than" not in check.detail
