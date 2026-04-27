@@ -1070,7 +1070,13 @@ def runs() -> None:
 )
 @click.option("--limit", type=click.IntRange(min=1), default=20, show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-def list_runs(project_root: Path | None, limit: int, as_json: bool) -> None:
+@click.option(
+    "--no-header",
+    "no_header",
+    is_flag=True,
+    help="Skip the header row so the output can be piped into awk/cut/fzf cleanly.",
+)
+def list_runs(project_root: Path | None, limit: int, as_json: bool, no_header: bool) -> None:
     """List recent run artifact bundles."""
 
     summaries = iter_run_summaries((project_root or Path.cwd()).resolve())[:limit]
@@ -1080,7 +1086,8 @@ def list_runs(project_root: Path | None, limit: int, as_json: bool) -> None:
     if not summaries:
         click.echo("No recorded runs found.")
         return
-    click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
+    if not no_header:
+        click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
     for summary in summaries:
         click.echo(_format_run_summary(summary))
 
@@ -1137,6 +1144,12 @@ def show_runs(trace_id: str, project_root: Path | None, as_json: bool) -> None:
     default=None,
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+@click.option(
+    "--no-header",
+    "no_header",
+    is_flag=True,
+    help="Skip the header row so the output can be piped into awk/cut/fzf cleanly.",
+)
 def search_runs(
     status: str | None,
     command: str | None,
@@ -1147,6 +1160,7 @@ def search_runs(
     limit: int,
     project_root: Path | None,
     as_json: bool,
+    no_header: bool,
 ) -> None:
     """Search run history by status, command, date, or input file."""
 
@@ -1166,7 +1180,8 @@ def search_runs(
     if not summaries:
         click.echo("No matching runs found.")
         return
-    click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
+    if not no_header:
+        click.echo("trace_id\tcommand\tstatus\tstarted_at\tinput\tstages")
     for summary in summaries:
         click.echo(_format_run_summary(summary))
 
@@ -1242,7 +1257,13 @@ def roster_add(name: str, aliases: tuple[str, ...], role: str | None, team: str 
 
 @roster.command("list")
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-def roster_list(as_json: bool) -> None:
+@click.option(
+    "--no-header",
+    "no_header",
+    is_flag=True,
+    help="Skip the header row so the output can be piped into awk/cut/fzf cleanly.",
+)
+def roster_list(as_json: bool, no_header: bool) -> None:
     """List all participants in the roster."""
 
     from .roster import Roster
@@ -1254,7 +1275,8 @@ def roster_list(as_json: bool) -> None:
     if not entries:
         click.echo("Roster is empty.")
         return
-    click.echo("name\trole\tteam\taliases\tadded_at")
+    if not no_header:
+        click.echo("name\trole\tteam\taliases\tadded_at")
     for entry in entries:
         click.echo(
             "\t".join(

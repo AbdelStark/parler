@@ -645,6 +645,39 @@ class TestRunsSearch:
         assert result.exit_code == 0
         assert "No matching runs found." in result.output
 
+    def test_search_no_header_omits_header_row(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec = RunRecorder(command="process", project_root=Path.cwd())
+            rec.finish_cancelled()
+
+            with_header = runner.invoke(cli, ["runs", "search"])
+            without_header = runner.invoke(cli, ["runs", "search", "--no-header"])
+
+        assert with_header.exit_code == 0
+        assert without_header.exit_code == 0
+        assert "trace_id\tcommand" in with_header.output
+        assert "trace_id\tcommand" not in without_header.output
+        assert rec.trace_id in with_header.output
+        assert rec.trace_id in without_header.output
+
+    def test_list_no_header_omits_header_row(self) -> None:
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            rec = RunRecorder(command="process", project_root=Path.cwd())
+            rec.finish_cancelled()
+
+            with_header = runner.invoke(cli, ["runs", "list"])
+            without_header = runner.invoke(cli, ["runs", "list", "--no-header"])
+
+        assert with_header.exit_code == 0
+        assert without_header.exit_code == 0
+        assert "trace_id\tcommand" in with_header.output
+        assert "trace_id\tcommand" not in without_header.output
+        assert rec.trace_id in without_header.output
+
 
 class TestRosterCommands:
     def _make_roster(self, tmp_path: Path):
@@ -737,6 +770,25 @@ class TestRosterCommands:
         with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
             result = runner.invoke(cli, ["roster", "show", "Unknown"])
             assert result.exit_code != 0
+
+    def test_list_no_header_omits_header_row(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        roster_path = tmp_path / "roster.json"
+
+        with patch("parler.roster.Roster.DEFAULT_PATH", roster_path):
+            runner.invoke(
+                cli,
+                ["roster", "add", "Alice", "--role", "PM", "--team", "Product"],
+            )
+
+            with_header = runner.invoke(cli, ["roster", "list"])
+            without_header = runner.invoke(cli, ["roster", "list", "--no-header"])
+
+        assert with_header.exit_code == 0
+        assert without_header.exit_code == 0
+        assert "name\trole\tteam" in with_header.output
+        assert "name\trole\tteam" not in without_header.output
+        assert "Alice" in without_header.output
 
 
 class TestReviewCommand:
